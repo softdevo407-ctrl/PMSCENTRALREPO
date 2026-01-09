@@ -1,23 +1,50 @@
 
 import React, { useState, useEffect } from 'react';
 import { Project, ProjectCategory, ProjectStatus } from './src/types';
+import { UserRole } from './src/pbemTypes';
 import Dashboard from './src/components/Dashboard';
 import ProjectDetail from './src/components/ProjectDetail';
 import ProjectCard from './src/components/ProjectCard';
 import Sidebar from './src/components/Sidebar';
+import RoleSelector from './src/components/RoleSelector';
+import PBEMSDashboard from './src/components/PBEMSDashboard';
+import StartPage from './src/components/StartPage';
+import CoreUIDashboardLayout from './src/components/CoreUIDashboardLayout';
+import ProjectDirectorDashboard from './src/components/ProjectDirectorDashboard';
+import ProgrammeDirectorDashboard from './src/components/ProgrammeDirectorDashboard';
+import ChairmanDashboard from './src/components/ChairmanDashboard';
+import { NewProjectPage } from './src/components/pages/NewProjectPage';
+import { MyProjectsPage } from './src/components/pages/MyProjectsPage';
+import { ProjectSchedulingPage } from './src/components/pages/ProjectSchedulingPage';
+import { RevisionsPage } from './src/components/pages/RevisionsPage';
+import { AssignedProjectsPage } from './src/components/pages/AssignedProjectsPage';
+import { MonitoringPage } from './src/components/pages/MonitoringPage';
+import { ApprovalsPage } from './src/components/pages/ApprovalsPage';
+import { OversightPage } from './src/components/pages/OversightPage';
+import { AnalyticsPage } from './src/components/pages/AnalyticsPage';
+import { ReportsPage } from './src/components/pages/ReportsPage';
 import { 
   ArrowLeft, 
   Plus, 
   Bell,
   Menu,
-  Loader2
+  Loader2,
+  LogOut,
+  Settings
 } from 'lucide-react';
 
 const API_BASE_URL = 'http://localhost:8080/api/projects';
 
-type View = 'DASHBOARD' | 'CATEGORY_DETAIL' | 'PROJECT_DETAIL';
+type View = 'DASHBOARD' | 'CATEGORY_DETAIL' | 'PROJECT_DETAIL' | 'PMS';
+type AppMode = 'BUDGET' | 'PMS' | 'START' | 'LEGACY_PMS';
 
 const App: React.FC = () => {
+  const [appMode, setAppMode] = useState<AppMode>('START');
+  const [userRole, setUserRole] = useState<UserRole | null>(null);
+  const [currentUserName, setCurrentUserName] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState('dashboard');
+
+  // Budget Dashboard State
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -110,19 +137,137 @@ const App: React.FC = () => {
         <div className="inline-block p-4 bg-white rounded-full shadow-2xl mb-6">
           <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
         </div>
-        <h2 className="text-2xl font-bold text-slate-900 mb-2">Initializing PBEMS</h2>
+        <h2 className="text-2xl font-bold text-slate-900 mb-2">Initializing PMS</h2>
         <p className="text-slate-500">Loading your project data...</p>
       </div>
     </div>
   );
 
+  // START PAGE - First load
+  if (appMode === 'START') {
+    return (
+      <StartPage
+        onGetStarted={() => setAppMode('PMS')}
+      />
+    );
+  }
+
+  // PMS Mode with CoreUI
+  if (appMode === 'PMS') {
+    // Show start page or role selector
+    if (!userRole || !currentUserName) {
+      return (
+        <StartPage
+          onGetStarted={() => {
+            // Switch to role selector by using LEGACY_PMS mode
+            setAppMode('LEGACY_PMS');
+          }}
+        />
+      );
+    }
+
+    // Show CoreUI Dashboard based on role
+    return (
+      <CoreUIDashboardLayout
+        userRole={userRole}
+        userName={currentUserName}
+        currentPage={currentPage}
+        onNavigate={setCurrentPage}
+        onLogout={() => {
+          setUserRole(null);
+          setCurrentUserName(null);
+          setAppMode('START');
+        }}
+      >
+        {/* PROJECT DIRECTOR PAGES */}
+        {currentPage === 'dashboard' && userRole === 'Project Director' && (
+          <ProjectDirectorDashboard
+            userName={currentUserName}
+            onNavigate={setCurrentPage}
+          />
+        )}
+        {currentPage === 'new-project' && userRole === 'Project Director' && (
+          <NewProjectPage userName={currentUserName} />
+        )}
+        {currentPage === 'my-projects' && userRole === 'Project Director' && (
+          <MyProjectsPage userName={currentUserName} />
+        )}
+        {currentPage === 'scheduling' && userRole === 'Project Director' && (
+          <ProjectSchedulingPage userName={currentUserName} />
+        )}
+        {currentPage === 'revisions' && userRole === 'Project Director' && (
+          <RevisionsPage userName={currentUserName} userRole={userRole} />
+        )}
+
+        {/* PROGRAMME DIRECTOR PAGES */}
+        {currentPage === 'dashboard' && userRole === 'Programme Director' && (
+          <ProgrammeDirectorDashboard
+            userName={currentUserName}
+            onNavigate={setCurrentPage}
+          />
+        )}
+        {currentPage === 'assigned-projects' && userRole === 'Programme Director' && (
+          <AssignedProjectsPage userName={currentUserName} />
+        )}
+        {currentPage === 'monitoring' && userRole === 'Programme Director' && (
+          <MonitoringPage userName={currentUserName} />
+        )}
+        {currentPage === 'approvals' && userRole === 'Programme Director' && (
+          <ApprovalsPage userName={currentUserName} userRole={userRole} />
+        )}
+        {currentPage === 'reports' && userRole === 'Programme Director' && (
+          <ReportsPage userName={currentUserName} />
+        )}
+
+        {/* CHAIRMAN PAGES */}
+        {currentPage === 'dashboard' && userRole === 'Chairman' && (
+          <ChairmanDashboard 
+            userName={currentUserName}
+            onNavigate={setCurrentPage} 
+          />
+        )}
+        {currentPage === 'all-projects' && userRole === 'Chairman' && (
+          <OversightPage userName={currentUserName} />
+        )}
+        {currentPage === 'oversight' && userRole === 'Chairman' && (
+          <OversightPage userName={currentUserName} />
+        )}
+        {currentPage === 'approvals' && userRole === 'Chairman' && (
+          <ApprovalsPage userName={currentUserName} userRole={userRole} />
+        )}
+        {currentPage === 'analytics' && userRole === 'Chairman' && (
+          <AnalyticsPage userName={currentUserName} />
+        )}
+      </CoreUIDashboardLayout>
+    );
+  }
+
+  // LEGACY PMS MODE - Original role selector
+  if (appMode === 'LEGACY_PMS') {
+    return (
+      <RoleSelector
+        onRoleSelect={(role, userName) => {
+          setUserRole(role);
+          setCurrentUserName(userName);
+          setAppMode('PMS');
+        }}
+        onLogout={() => {
+          setUserRole(null);
+          setCurrentUserName(null);
+          setAppMode('START');
+        }}
+      />
+    );
+  }
+
+  // Budget Dashboard Mode (Legacy)
   return (
     <div className="flex h-screen bg-slate-100">
       {/* Sidebar */}
       <Sidebar
         isOpen={isSidebarOpen}
         onToggle={() => setIsSidebarOpen(!isSidebarOpen)}
-        currentView={currentView}
+        currentView={currentView as 'DASHBOARD' | 'CATEGORY_DETAIL' | 'PROJECT_DETAIL'}
         selectedCategory={selectedCategory}
         onDashboardClick={() => setCurrentView('DASHBOARD')}
         onCategoryClick={navigateToCategory}
@@ -139,7 +284,7 @@ const App: React.FC = () => {
             >
               <Menu className="w-5 h-5" />
             </button>
-            <h2 className="text-lg font-semibold text-gray-900">PBEMS Dashboard</h2>
+            <h2 className="text-lg font-semibold text-gray-900">PMS Dashboard</h2>
           </div>
 
           <div className="flex items-center gap-6">

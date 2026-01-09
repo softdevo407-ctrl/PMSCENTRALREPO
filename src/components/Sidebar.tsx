@@ -55,7 +55,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             </div>
             {isOpen && (
               <div>
-                <h1 className="text-2xl font-bold text-white">PBEMS</h1>
+                <h1 className="text-2xl font-bold text-white">PMS</h1>
                 <p className="text-xs text-blue-100">Budget Monitor</p>
               </div>
             )}

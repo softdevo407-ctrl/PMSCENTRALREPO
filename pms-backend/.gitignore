@@ -1,0 +1,33 @@
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Maven
+target/
+*.jar
+*.war
+*.ear
+.classpath
+.project
+.settings/
+
+# Build
+build/
+.gradle/
+
+# Node (if any frontend files)
+node_modules/
+npm-debug.log
+
+# Environment
+.env
+.env.local
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
