@@ -6,7 +6,7 @@ export interface UseAuthReturn {
   token: string | null;
   isAuthenticated: boolean;
   login: (employeeCode: string, password: string) => Promise<boolean>;
-  signup: (fullName: string, employeeCode: string, password: string, confirmPassword: string) => Promise<boolean>;
+  signup: (fullName: string, employeeCode: string, password: string, confirmPassword: string, role: string, assignedProgrammeId?: number | null) => Promise<boolean>;
   logout: () => void;
   isLoading: boolean;
   error: string | null;
@@ -41,6 +41,7 @@ export const useAuth = (): UseAuthReturn => {
           fullName: response.fullName,
           role: response.role,
           token: response.token,
+          assignedProgrammeId: response.assignedProgrammeId,
         };
         setUser(userData);
         setToken(response.token);
@@ -62,7 +63,9 @@ export const useAuth = (): UseAuthReturn => {
     fullName: string,
     employeeCode: string,
     password: string,
-    confirmPassword: string
+    confirmPassword: string,
+    role: string,
+    assignedProgrammeId?: number | null
   ): Promise<boolean> => {
     setIsLoading(true);
     setError(null);
@@ -72,7 +75,9 @@ export const useAuth = (): UseAuthReturn => {
         employeeCode,
         password,
         confirmPassword,
+        role,
         agreeToTerms: true,
+        assignedProgrammeId,
       });
 
       if (response.success) {
@@ -82,6 +87,7 @@ export const useAuth = (): UseAuthReturn => {
           fullName: response.fullName,
           role: response.role,
           token: response.token,
+          assignedProgrammeId: response.assignedProgrammeId,
         };
         setUser(userData);
         setToken(response.token);

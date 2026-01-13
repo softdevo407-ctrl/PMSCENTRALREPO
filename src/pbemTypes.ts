@@ -7,6 +7,7 @@ export enum UserRole {
   PROJECT_DIRECTOR = 'Project Director',
   PROGRAMME_DIRECTOR = 'Programme Director',
   CHAIRMAN = 'Chairman',
+  ADMIN = 'Admin',
 }
 
 export enum PhaseType {

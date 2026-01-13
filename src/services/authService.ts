@@ -10,7 +10,9 @@ export interface SignupRequest {
   employeeCode: string;
   password: string;
   confirmPassword: string;
+  role: string;
   agreeToTerms: boolean;
+  assignedProgrammeId?: number | null;
 }
 
 export interface AuthResponse {
@@ -19,6 +21,7 @@ export interface AuthResponse {
   employeeCode: string;
   fullName: string;
   role: string;
+  assignedProgrammeId?: number | null;
   success: boolean;
   message: string;
 }
@@ -29,6 +32,7 @@ export interface AuthUser {
   fullName: string;
   role: string;
   token: string;
+  assignedProgrammeId?: number | null;
 }
 
 class AuthService {
@@ -45,6 +49,21 @@ class AuthService {
         body: JSON.stringify(credentials),
       });
 
+      if (!response.ok) {
+        const text = await response.text();
+        console.error("Login failed:", text);
+        return {
+          success: false,
+          message: "Login failed: " + response.statusText,
+          token: "",
+          userId: 0,
+          employeeCode: "",
+          fullName: "",
+          role: "",
+          assignedProgrammeId: null,
+        };
+      }
+
       const data = await response.json();
 
       if (data.success && data.token) {
@@ -55,11 +74,13 @@ class AuthService {
           fullName: data.fullName,
           role: data.role,
           token: data.token,
+          assignedProgrammeId: data.assignedProgrammeId,
         });
       }
 
       return data;
     } catch (error) {
+      console.error("Login error:", error);
       return {
         success: false,
         message: error instanceof Error ? error.message : "Login failed",
@@ -68,6 +89,7 @@ class AuthService {
         employeeCode: "",
         fullName: "",
         role: "",
+        assignedProgrammeId: null,
       };
     }
   }
@@ -82,6 +104,21 @@ class AuthService {
         body: JSON.stringify(data),
       });
 
+      if (!response.ok) {
+        const text = await response.text();
+        console.error("Signup failed:", text);
+        return {
+          success: false,
+          message: "Signup failed: " + response.statusText,
+          token: "",
+          userId: 0,
+          employeeCode: "",
+          fullName: "",
+          role: "",
+          assignedProgrammeId: null,
+        };
+      }
+
       const responseData = await response.json();
 
       if (responseData.success && responseData.token) {
@@ -92,11 +129,13 @@ class AuthService {
           fullName: responseData.fullName,
           role: responseData.role,
           token: responseData.token,
+          assignedProgrammeId: responseData.assignedProgrammeId,
         });
       }
 
       return responseData;
     } catch (error) {
+      console.error("Signup error:", error);
       return {
         success: false,
         message: error instanceof Error ? error.message : "Signup failed",
@@ -105,6 +144,7 @@ class AuthService {
         employeeCode: "",
         fullName: "",
         role: "",
+        assignedProgrammeId: null,
       };
     }
   }

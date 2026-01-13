@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   CheckCircle,
   AlertCircle,
@@ -6,8 +6,10 @@ import {
   Users,
   Clock,
   BarChart3,
+  Loader2,
 } from 'lucide-react';
-import { SAMPLE_PROJECT_DEFINITIONS, SAMPLE_PROJECT_SCHEDULING, SAMPLE_REVISION_REQUESTS } from '../pbemData';
+import { useAuth } from '../hooks/useAuth';
+import { projectService, ProjectDefinitionResponse } from '../services/projectService';
 
 interface ProgrammeDirectorDashboardProps {
   userName: string;
@@ -15,26 +17,45 @@ interface ProgrammeDirectorDashboardProps {
 }
 
 const ProgrammeDirectorDashboard: React.FC<ProgrammeDirectorDashboardProps> = ({ userName, onNavigate }) => {
-  const assignedProjects = SAMPLE_PROJECT_DEFINITIONS.filter((p) => p.programmeDirectorName === userName);
-  const assignedSchedulings = SAMPLE_PROJECT_SCHEDULING.filter((s) => {
-    const def = SAMPLE_PROJECT_DEFINITIONS.find((d) => d.id === s.projectDefinitionId);
-    return def?.programmeDirectorName === userName;
-  });
-  const assignedRevisions = SAMPLE_REVISION_REQUESTS.filter((r) => {
-    const def = SAMPLE_PROJECT_DEFINITIONS.find((d) => d.id === r.projectDefinitionId);
-    return def?.programmeDirectorName === userName;
-  });
+  const { user } = useAuth();
+  const [projects, setProjects] = useState<ProjectDefinitionResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
+  // Fetch projects by programme ID
+  useEffect(() => {
+    const fetchProjects = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        if (!user?.assignedProgrammeId) {
+          setError('No programme assigned to this user');
+          setLoading(false);
+          return;
+        }
+
+        const fetchedProjects = await projectService.getProjectsByProgrammeId(user.assignedProgrammeId);
+        setProjects(fetchedProjects);
+      } catch (err) {
+        console.error('Error fetching projects:', err);
+        setError('Failed to load projects');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProjects();
+  }, [user?.assignedProgrammeId]);
+
+  // Calculate stats from real data
   const stats = {
-    total: assignedProjects.length,
-    onTrack: assignedProjects.filter((p) => p.status === 'On Track').length,
-    atRisk: assignedProjects.filter((p) => p.status === 'At Risk').length,
-    delayed: assignedProjects.filter((p) => p.status === 'Delayed').length,
-    avgCompletion: Math.round(
-      assignedSchedulings.reduce((sum, s) => sum + s.overallCompletionPercentage, 0) /
-        (assignedSchedulings.length || 1)
-    ),
-    pendingRevisions: assignedRevisions.filter((r) => r.status === 'PENDING').length,
+    total: projects.length,
+    onTrack: projects.filter((p) => p.status === 'ON_TRACK').length,
+    atRisk: projects.filter((p) => p.status === 'AT_RISK').length,
+    delayed: projects.filter((p) => p.status === 'DELAYED').length,
+    avgCompletion: 0, // Will be calculated from project scheduling data if available
+    pendingRevisions: 0, // Will be calculated from revision requests if available
   };
 
   return (
@@ -45,62 +66,90 @@ const ProgrammeDirectorDashboard: React.FC<ProgrammeDirectorDashboardProps> = ({
         <p className="text-gray-600 mt-2">Monitor and manage assigned projects</p>
       </div>
 
+      {/* Loading State */}
+      {loading && (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mr-3" />
+          <p className="text-lg text-gray-600">Loading projects...</p>
+        </div>
+      )}
+
+      {/* Error State */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-red-800 font-semibold">{error}</p>
+          {!user?.assignedProgrammeId && (
+            <p className="text-red-600 text-sm mt-2">Please ensure your programme is assigned during registration.</p>
+          )}
+        </div>
+      )}
+
+      {/* No Projects State */}
+      {!loading && projects.length === 0 && !error && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <p className="text-blue-800 font-semibold">No projects assigned yet</p>
+          <p className="text-blue-600 text-sm mt-2">Projects will appear here once they are created for your assigned programme.</p>
+        </div>
+      )}
+
       {/* Key Metrics */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
-        <div className="bg-white rounded-lg p-5 shadow-sm border border-gray-200">
-          <p className="text-xs text-gray-600 font-semibold uppercase">Total Assigned</p>
-          <p className="text-3xl font-bold text-gray-900 mt-2">{stats.total}</p>
-          <div className="flex items-center gap-2 mt-2 text-sm text-gray-600">
-            <Users className="w-4 h-4" />
-            Projects
+      {!loading && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+          <div className="bg-white rounded-lg p-5 shadow-sm border border-gray-200">
+            <p className="text-xs text-gray-600 font-semibold uppercase">Total Assigned</p>
+            <p className="text-3xl font-bold text-gray-900 mt-2">{stats.total}</p>
+            <div className="flex items-center gap-2 mt-2 text-sm text-gray-600">
+              <Users className="w-4 h-4" />
+              Projects
+            </div>
           </div>
-        </div>
 
-        <div className="bg-white rounded-lg p-5 shadow-sm border border-gray-200">
-          <p className="text-xs text-emerald-600 font-semibold uppercase">On Track</p>
-          <p className="text-3xl font-bold text-emerald-900 mt-2">{stats.onTrack}</p>
-          <div className="flex items-center gap-2 mt-2 text-sm text-emerald-600">
-            <CheckCircle className="w-4 h-4" />
-            Healthy
+          <div className="bg-white rounded-lg p-5 shadow-sm border border-gray-200">
+            <p className="text-xs text-emerald-600 font-semibold uppercase">On Track</p>
+            <p className="text-3xl font-bold text-emerald-900 mt-2">{stats.onTrack}</p>
+            <div className="flex items-center gap-2 mt-2 text-sm text-emerald-600">
+              <CheckCircle className="w-4 h-4" />
+              Healthy
+            </div>
           </div>
-        </div>
 
-        <div className="bg-white rounded-lg p-5 shadow-sm border border-gray-200">
-          <p className="text-xs text-orange-600 font-semibold uppercase">At Risk</p>
-          <p className="text-3xl font-bold text-orange-900 mt-2">{stats.atRisk}</p>
-          <div className="flex items-center gap-2 mt-2 text-sm text-orange-600">
-            <AlertCircle className="w-4 h-4" />
-            Alert
+          <div className="bg-white rounded-lg p-5 shadow-sm border border-gray-200">
+            <p className="text-xs text-orange-600 font-semibold uppercase">At Risk</p>
+            <p className="text-3xl font-bold text-orange-900 mt-2">{stats.atRisk}</p>
+            <div className="flex items-center gap-2 mt-2 text-sm text-orange-600">
+              <AlertCircle className="w-4 h-4" />
+              Alert
+            </div>
           </div>
-        </div>
 
-        <div className="bg-white rounded-lg p-5 shadow-sm border border-gray-200">
-          <p className="text-xs text-red-600 font-semibold uppercase">Delayed</p>
-          <p className="text-3xl font-bold text-red-900 mt-2">{stats.delayed}</p>
-          <div className="flex items-center gap-2 mt-2 text-sm text-red-600">
-            <Clock className="w-4 h-4" />
-            Critical
+          <div className="bg-white rounded-lg p-5 shadow-sm border border-gray-200">
+            <p className="text-xs text-red-600 font-semibold uppercase">Delayed</p>
+            <p className="text-3xl font-bold text-red-900 mt-2">{stats.delayed}</p>
+            <div className="flex items-center gap-2 mt-2 text-sm text-red-600">
+              <Clock className="w-4 h-4" />
+              Critical
+            </div>
           </div>
-        </div>
 
-        <div className="bg-white rounded-lg p-5 shadow-sm border border-gray-200">
-          <p className="text-xs text-blue-600 font-semibold uppercase">Avg Progress</p>
-          <p className="text-3xl font-bold text-blue-900 mt-2">{stats.avgCompletion}%</p>
-          <div className="flex items-center gap-2 mt-2 text-sm text-blue-600">
-            <TrendingUp className="w-4 h-4" />
-            Overall
+          <div className="bg-white rounded-lg p-5 shadow-sm border border-gray-200">
+            <p className="text-xs text-blue-600 font-semibold uppercase">Avg Progress</p>
+            <p className="text-3xl font-bold text-blue-900 mt-2">{stats.avgCompletion}%</p>
+            <div className="flex items-center gap-2 mt-2 text-sm text-blue-600">
+              <TrendingUp className="w-4 h-4" />
+              Overall
+            </div>
           </div>
-        </div>
 
-        <div className="bg-white rounded-lg p-5 shadow-sm border border-gray-200">
-          <p className="text-xs text-purple-600 font-semibold uppercase">Pending Approvals</p>
-          <p className="text-3xl font-bold text-purple-900 mt-2">{stats.pendingRevisions}</p>
-          <div className="flex items-center gap-2 mt-2 text-sm text-purple-600">
-            <BarChart3 className="w-4 h-4" />
-            Revision
+          <div className="bg-white rounded-lg p-5 shadow-sm border border-gray-200">
+            <p className="text-xs text-purple-600 font-semibold uppercase">Pending Approvals</p>
+            <p className="text-3xl font-bold text-purple-900 mt-2">{stats.pendingRevisions}</p>
+            <div className="flex items-center gap-2 mt-2 text-sm text-purple-600">
+              <BarChart3 className="w-4 h-4" />
+              Revision
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Project Status Overview */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
@@ -120,14 +169,20 @@ const ProgrammeDirectorDashboard: React.FC<ProgrammeDirectorDashboardProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {assignedProjects.map((project) => {
-                const scheduling = assignedSchedulings.find((s) => s.projectDefinitionId === project.id);
+              {projects.map((project) => {
                 const statusColor =
-                  project.status === 'On Track'
+                  project.status === 'ON_TRACK'
                     ? 'bg-emerald-100 text-emerald-800'
-                    : project.status === 'At Risk'
+                    : project.status === 'AT_RISK'
                     ? 'bg-orange-100 text-orange-800'
                     : 'bg-red-100 text-red-800';
+
+                const statusDisplay =
+                  project.status === 'ON_TRACK'
+                    ? 'On Track'
+                    : project.status === 'AT_RISK'
+                    ? 'At Risk'
+                    : 'Delayed';
 
                 return (
                   <tr key={project.id} className="hover:bg-gray-50 transition-colors">
@@ -142,7 +197,7 @@ const ProgrammeDirectorDashboard: React.FC<ProgrammeDirectorDashboardProps> = ({
                     </td>
                     <td className="px-6 py-4">
                       <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColor}`}>
-                        {project.status}
+                        {statusDisplay}
                       </span>
                     </td>
                     <td className="px-6 py-4">
@@ -150,10 +205,10 @@ const ProgrammeDirectorDashboard: React.FC<ProgrammeDirectorDashboardProps> = ({
                         <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden mb-1">
                           <div
                             className="h-full bg-gradient-to-r from-blue-500 to-blue-600"
-                            style={{ width: `${scheduling?.overallCompletionPercentage || 0}%` }}
+                            style={{ width: `${0}%` }}
                           />
                         </div>
-                        <p className="text-xs font-semibold text-gray-900">{scheduling?.overallCompletionPercentage || 0}%</p>
+                        <p className="text-xs font-semibold text-gray-900">0%</p>
                       </div>
                     </td>
                     <td className="px-6 py-4">

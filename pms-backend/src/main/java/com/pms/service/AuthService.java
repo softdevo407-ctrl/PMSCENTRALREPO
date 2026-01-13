@@ -34,6 +34,11 @@ public class AuthService {
             return AuthResponse.builder()
                     .success(false)
                     .message("Passwords do not match")
+                    .token("")
+                    .userId(0L)
+                    .employeeCode("")
+                    .fullName("")
+                    .role("")
                     .build();
         }
 
@@ -42,14 +47,19 @@ public class AuthService {
             return AuthResponse.builder()
                     .success(false)
                     .message("Employee code already registered")
+                    .token("")
+                    .userId(0L)
+                    .employeeCode("")
+                    .fullName("")
+                    .role("")
                     .build();
         }
 
         try {
-            // Get default role (assuming "PROJECT_DIRECTOR" is the default)
-            Role role = roleRepository.findByName("PROJECT_DIRECTOR")
+            // Get role from request
+            Role role = roleRepository.findByName(request.getRole())
                     .orElseThrow(() -> new RuntimeException(
-                            "Default role 'PROJECT_DIRECTOR' not found. Please contact administrator."
+                            "Role '" + request.getRole() + "' not found. Please select a valid role."
                     ));
 
             // Create new user
@@ -59,6 +69,7 @@ public class AuthService {
                     .password(passwordEncoder.encode(request.getPassword()))
                     .role(role)
                     .active(true)
+                    .assignedProgrammeId(request.getAssignedProgrammeId())
                     .build();
 
             userRepository.save(user);
@@ -73,6 +84,7 @@ public class AuthService {
                     .employeeCode(user.getEmployeeCode())
                     .fullName(user.getFullName())
                     .role(user.getRole().getName())
+                    .assignedProgrammeId(user.getAssignedProgrammeId())
                     .success(true)
                     .message("User registered successfully")
                     .build();
@@ -81,6 +93,11 @@ public class AuthService {
             return AuthResponse.builder()
                     .success(false)
                     .message(ex.getMessage())
+                    .token("")
+                    .userId(0L)
+                    .employeeCode("")
+                    .fullName("")
+                    .role("")
                     .build();
         }
     }
@@ -107,6 +124,7 @@ public class AuthService {
                     .employeeCode(user.getEmployeeCode())
                     .fullName(user.getFullName())
                     .role(user.getRole().getName())
+                    .assignedProgrammeId(user.getAssignedProgrammeId())
                     .success(true)
                     .message("Login successful")
                     .build();
@@ -115,6 +133,11 @@ public class AuthService {
             return AuthResponse.builder()
                     .success(false)
                     .message("Invalid employee code or password")
+                    .token("")
+                    .userId(0L)
+                    .employeeCode("")
+                    .fullName("")
+                    .role("")
                     .build();
         }
     }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Plus,
   FileText,
@@ -8,37 +8,91 @@ import {
   AlertCircle,
   CheckCircle,
   Calendar,
+  Loader2,
 } from 'lucide-react';
-import { SAMPLE_PROJECT_DEFINITIONS, SAMPLE_PROJECT_SCHEDULING, SAMPLE_REVISION_REQUESTS } from '../pbemData';
+import { useAuth } from '../hooks/useAuth';
+import { projectService, ProjectDefinitionResponse } from '../services/projectService';
+import { SAMPLE_PROJECT_SCHEDULING, SAMPLE_REVISION_REQUESTS } from '../pbemData';
 import CoreUIForm from './CoreUIForm';
+import { CategoryStatsCards } from './CategoryStatsCards';
 
 interface ProjectDirectorDashboardProps {
   userName: string;
-  onNavigate: (page: string) => void;
+  onNavigate: (page: string, category?: string) => void;
 }
 
 const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ userName, onNavigate }) => {
+  const { user } = useAuth();
   const [showNewProjectForm, setShowNewProjectForm] = useState(false);
+  const [myProjects, setMyProjects] = useState<ProjectDefinitionResponse[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const myProjects = SAMPLE_PROJECT_DEFINITIONS.filter((p) => p.projectDirectorName === userName);
+  // Fetch projects on mount and when user changes
+  useEffect(() => {
+    if (user?.id) {
+      fetchProjects();
+    }
+  }, [user?.id]);
+
+  const fetchProjects = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const projects = await projectService.getProjectsByDirector(user!.id);
+      setMyProjects(projects);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch projects';
+      setError(errorMessage);
+      console.error('Error fetching projects:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const mySchedulings = SAMPLE_PROJECT_SCHEDULING.filter((s) => {
-    const def = SAMPLE_PROJECT_DEFINITIONS.find((d) => d.id === s.projectDefinitionId);
-    return def?.projectDirectorName === userName;
+    return myProjects.some((p) => p.id === s.projectDefinitionId);
   });
   const myRevisions = SAMPLE_REVISION_REQUESTS.filter((r) => r.requestedBy === userName);
 
   const stats = {
     total: myProjects.length,
-    onTrack: myProjects.filter((p) => p.status === 'On Track').length,
-    atRisk: myProjects.filter((p) => p.status === 'At Risk').length,
-    delayed: myProjects.filter((p) => p.status === 'Delayed').length,
+    onTrack: myProjects.filter((p) => p.status === 'ON_TRACK').length,
+    atRisk: myProjects.filter((p) => p.status === 'AT_RISK').length,
+    delayed: myProjects.filter((p) => p.status === 'DELAYED').length,
     pendingRevisions: myRevisions.filter((r) => r.status === 'PENDING').length,
   };
 
-  const handleNewProject = (data: Record<string, string>) => {
-    console.log('New project created:', data);
-    setShowNewProjectForm(false);
-    alert('Project created successfully!');
+  const handleNewProject = async (data: Record<string, string>) => {
+    try {
+      setError(null);
+      
+      // Parse sanctioned amount to number
+      const sanctionedAmount = parseFloat(data.sanctionedAmount) || 0;
+      
+      const projectData = {
+        projectName: data.projectName,
+        shortName: data.shortName,
+        programmeName: data.programmeName,
+        category: data.category,
+        budgetCode: data.budgetCode,
+        leadCentre: data.leadCentre,
+        sanctionedAmount: sanctionedAmount * 1000000, // Convert to actual amount
+        endDate: data.endDate,
+      };
+
+      await projectService.createProject(projectData, user?.token);
+      
+      setShowNewProjectForm(false);
+      alert('Project created successfully!');
+      
+      // Refresh projects list
+      await fetchProjects();
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create project';
+      setError(errorMessage);
+      alert(`Error creating project: ${errorMessage}`);
+    }
   };
 
   const newProjectFields = [
@@ -70,14 +124,11 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
           <h1 className="text-3xl font-bold text-gray-900">Welcome back, {userName}!</h1>
           <p className="text-gray-600 mt-2">Manage your projects and track progress</p>
         </div>
-        <button
-          onClick={() => setShowNewProjectForm(true)}
-          className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white px-6 py-3 rounded-lg font-semibold flex items-center gap-2 shadow-lg transition-all transform hover:-translate-y-0.5"
-        >
-          <Plus className="w-5 h-5" />
-          New Project
-        </button>
+     
       </div>
+
+      {/* Category-wise Stats Cards */}
+      <CategoryStatsCards onNavigate={onNavigate} />
 
       {/* Statistics Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
@@ -137,70 +188,100 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
         <div className="p-6 border-b border-gray-200">
           <h3 className="text-xl font-bold text-gray-900">Your Projects</h3>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Project Name</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Budget</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Progress</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">End Date</th>
-                <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {myProjects.map((project) => {
-                const scheduling = mySchedulings.find((s) => s.projectDefinitionId === project.id);
-                const statusColor =
-                  project.status === 'On Track'
-                    ? 'bg-emerald-100 text-emerald-800'
-                    : project.status === 'At Risk'
-                    ? 'bg-orange-100 text-orange-800'
-                    : 'bg-red-100 text-red-800';
+        
+        {loading ? (
+          <div className="p-12 flex flex-col items-center justify-center">
+            <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4" />
+            <p className="text-gray-600">Loading your projects...</p>
+          </div>
+        ) : error ? (
+          <div className="p-6 bg-red-50 border-t border-red-200">
+            <p className="text-red-700 font-semibold">Error loading projects</p>
+            <p className="text-red-600 text-sm mt-1">{error}</p>
+            <button
+              onClick={fetchProjects}
+              className="mt-4 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded font-semibold text-sm"
+            >
+              Retry
+            </button>
+          </div>
+        ) : myProjects.length === 0 ? (
+          <div className="p-12 text-center">
+            <p className="text-gray-600 mb-4">No projects yet. Create your first project!</p>
+            <button
+              onClick={() => setShowNewProjectForm(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-semibold inline-flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Create Project
+            </button>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Project Name</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Budget</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Progress</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">End Date</th>
+                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {myProjects.map((project) => {
+                  const scheduling = mySchedulings.find((s) => s.projectDefinitionId === project.id);
+                  const statusColor =
+                    project.status === 'ON_TRACK'
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : project.status === 'AT_RISK'
+                      ? 'bg-orange-100 text-orange-800'
+                      : 'bg-red-100 text-red-800';
 
-                return (
-                  <tr key={project.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <p className="font-semibold text-gray-900">{project.projectName}</p>
-                      <p className="text-sm text-gray-500">{project.shortName}</p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColor}`}>
-                        {project.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <p className="font-semibold text-gray-900">₹{(project.revisedSanctionedAmount / 1000000).toFixed(1)}M</p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-blue-500 to-blue-600"
-                            style={{ width: `${scheduling?.overallCompletionPercentage || 0}%` }}
-                          />
+                  return (
+                    <tr key={project.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <p className="font-semibold text-gray-900">{project.projectName}</p>
+                        <p className="text-sm text-gray-500">{project.shortName}</p>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColor}`}>
+                          {project.status.replace('_', ' ')}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <p className="font-semibold text-gray-900">₹{(project.sanctionedAmount / 1000000).toFixed(1)}M</p>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-blue-500 to-blue-600"
+                              style={{ width: `${scheduling?.overallCompletionPercentage || 0}%` }}
+                            />
+                          </div>
+                          <span className="text-sm font-semibold text-gray-900">{scheduling?.overallCompletionPercentage || 0}%</span>
                         </div>
-                        <span className="text-sm font-semibold text-gray-900">{scheduling?.overallCompletionPercentage || 0}%</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                      {new Date(project.revisedEndDate || project.endDate).toLocaleDateString('en-IN')}
-                    </td>
-                    <td className="px-6 py-4">
-                      <button
-                        onClick={() => onNavigate('my-projects')}
-                        className="text-blue-600 hover:text-blue-800 font-semibold text-sm"
-                      >
-                        View
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-600">
+                        {new Date(project.revisedEndDate || project.endDate).toLocaleDateString('en-IN')}
+                      </td>
+                      <td className="px-6 py-4">
+                        <button
+                          onClick={() => onNavigate('my-projects')}
+                          className="text-blue-600 hover:text-blue-800 font-semibold text-sm"
+                        >
+                          View
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Quick Links */}

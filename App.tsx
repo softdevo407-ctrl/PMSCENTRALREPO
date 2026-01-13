@@ -2,6 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { Project, ProjectCategory, ProjectStatus } from './src/types';
 import { UserRole } from './src/pbemTypes';
+import { useAuth } from './src/hooks/useAuth';
+import { authService } from './src/services/authService';
 import Dashboard from './src/components/Dashboard';
 import ProjectDetail from './src/components/ProjectDetail';
 import ProjectCard from './src/components/ProjectCard';
@@ -23,6 +25,7 @@ import { ApprovalsPage } from './src/components/pages/ApprovalsPage';
 import { OversightPage } from './src/components/pages/OversightPage';
 import { AnalyticsPage } from './src/components/pages/AnalyticsPage';
 import { ReportsPage } from './src/components/pages/ReportsPage';
+import { RoleManagementPage } from './src/components/pages/RoleManagementPage';
 import { 
   ArrowLeft, 
   Plus, 
@@ -39,6 +42,7 @@ type View = 'DASHBOARD' | 'CATEGORY_DETAIL' | 'PROJECT_DETAIL' | 'PMS';
 type AppMode = 'BUDGET' | 'PMS' | 'START' | 'LEGACY_PMS';
 
 const App: React.FC = () => {
+  const { user, logout } = useAuth();
   const [appMode, setAppMode] = useState<AppMode>('START');
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
@@ -52,6 +56,47 @@ const App: React.FC = () => {
   const [selectedCategory, setSelectedCategory] = useState<ProjectCategory | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Initialize auth state from localStorage on app mount
+  useEffect(() => {
+    const savedUser = authService.getCurrentUser();
+    if (savedUser && savedUser.role) {
+      // Map backend role names to frontend role names
+      const roleMap: { [key: string]: UserRole } = {
+        'ADMIN': 'Admin',
+        'PROJECT_DIRECTOR': 'Project Director',
+        'PROGRAMME_DIRECTOR': 'Programme Director',
+        'CHAIRMAN': 'Chairman'
+      };
+      
+      const mappedRole = roleMap[savedUser.role] || savedUser.role;
+      setUserRole(mappedRole as UserRole);
+      setCurrentUserName(savedUser.fullName);
+      setAppMode('PMS');
+    }
+    setIsInitialized(true);
+  }, []);
+
+  // Sync user from authentication context when logged in
+  useEffect(() => {
+    if (!isInitialized) return;
+    
+    if (user && user.role) {
+      // Map backend role names to frontend role names
+      const roleMap: { [key: string]: UserRole } = {
+        'ADMIN': 'Admin',
+        'PROJECT_DIRECTOR': 'Project Director',
+        'PROGRAMME_DIRECTOR': 'Programme Director',
+        'CHAIRMAN': 'Chairman'
+      };
+      
+      const mappedRole = roleMap[user.role] || user.role;
+      setUserRole(mappedRole as UserRole);
+      setCurrentUserName(user.fullName);
+      setAppMode('PMS');
+    }
+  }, [user, isInitialized]);
 
   // Fetch all projects on mount
   useEffect(() => {
@@ -162,6 +207,18 @@ const App: React.FC = () => {
             // Switch to role selector by using LEGACY_PMS mode
             setAppMode('LEGACY_PMS');
           }}
+          onLoginSuccess={(fullName: string, role: string) => {
+            // Map backend role names to frontend role names
+            const roleMap: { [key: string]: UserRole } = {
+              'PROJECT_DIRECTOR': 'Project Director',
+              'PROGRAMME_DIRECTOR': 'Programme Director',
+              'CHAIRMAN': 'Chairman'
+            };
+            
+            const mappedRole = roleMap[role] || role;
+            setUserRole(mappedRole as UserRole);
+            setCurrentUserName(fullName);
+          }}
         />
       );
     }
@@ -174,11 +231,23 @@ const App: React.FC = () => {
         currentPage={currentPage}
         onNavigate={setCurrentPage}
         onLogout={() => {
+          logout();
           setUserRole(null);
           setCurrentUserName(null);
           setAppMode('START');
         }}
       >
+        {/* ADMIN PAGES */}
+        {currentPage === 'dashboard' && userRole === 'Admin' && (
+          <ChairmanDashboard 
+            userName={currentUserName}
+            onNavigate={setCurrentPage} 
+          />
+        )}
+        {currentPage === 'role-management' && userRole === 'Admin' && (
+          <RoleManagementPage />
+        )}
+
         {/* PROJECT DIRECTOR PAGES */}
         {currentPage === 'dashboard' && userRole === 'Project Director' && (
           <ProjectDirectorDashboard

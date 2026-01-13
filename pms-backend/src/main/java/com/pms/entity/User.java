@@ -40,6 +40,8 @@ public class User implements UserDetails {
     @lombok.Builder.Default
     private Boolean active = true;
 
+    private Long assignedProgrammeId;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;

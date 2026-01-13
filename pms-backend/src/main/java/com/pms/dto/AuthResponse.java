@@ -15,6 +15,7 @@ public class AuthResponse {
     private String employeeCode;
     private String fullName;
     private String role;
+    private Long assignedProgrammeId;
     private Boolean success;
     private String message;
 }

@@ -18,13 +18,78 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
     employeeCode: '',
     password: '',
     confirmPassword: '',
+    role: 'PROJECT_DIRECTOR',
     agreeToTerms: false,
+    assignedProgrammeId: null as number | null,
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [localErrors, setLocalErrors] = useState<{ [key: string]: string }>({});
   const [step, setStep] = useState<'form' | 'success'>('form');
+  const [programmes, setProgrammes] = useState<any[]>([]);
+  const [selectedProgrammeId, setSelectedProgrammeId] = useState<number | null>(null);
+  const [selectedProgrammeDetails, setSelectedProgrammeDetails] = useState<any>(null);
+  const [programmesLoading, setProgrammesLoading] = useState(false);
   const { signup, isLoading, error: authError } = useAuth();
+
+  // Static programmes data
+  const staticProgrammesData = [
+    { id: 1, programmeName: 'GSLV', description: 'Geostationary Satellite Launch Vehicle', status: 'ACTIVE' },
+    { id: 2, programmeName: 'PSLV', description: 'Polar Satellite Launch Vehicle', status: 'ACTIVE' },
+    { id: 3, programmeName: 'SSLV', description: 'Small Satellite Launch Vehicle', status: 'ACTIVE' },
+    { id: 4, programmeName: 'GAGANYAAN', description: 'Human Spaceflight Programme', status: 'ACTIVE' },
+    { id: 5, programmeName: 'COMMUNICATION SATELLITES', description: 'Communication Satellites Programme', status: 'ACTIVE' },
+    { id: 6, programmeName: 'EARTH OBSERVATION SATELLITES', description: 'Earth Observation Programme', status: 'ACTIVE' },
+    { id: 7, programmeName: 'SCIENCE MISSIONS', description: 'Scientific Research Missions', status: 'ACTIVE' },
+    { id: 8, programmeName: 'NAVIGATION SATELLITES', description: 'Navigation System Programme', status: 'ACTIVE' },
+    { id: 9, programmeName: 'SPACE EXPLORATION MISSIONS', description: 'Space Exploration Initiative', status: 'ACTIVE' },
+    { id: 10, programmeName: 'TECHNOLOGY DEMONSTRATION MISSIONS', description: 'Technology Demonstration', status: 'ACTIVE' },
+    { id: 11, programmeName: 'USER FUNDED SATTELITES', description: 'User Funded Satellite Programme', status: 'ACTIVE' }
+  ];
+
+  // Load programmes when role changes to PROGRAMME_DIRECTOR
+  React.useEffect(() => {
+    if (formData.role === 'PROGRAMME_DIRECTOR') {
+      loadProgrammes();
+    } else {
+      // Reset programme selection when role changes
+      setSelectedProgrammeId(null);
+      setSelectedProgrammeDetails(null);
+      setProgrammes([]);
+    }
+  }, [formData.role]);
+
+  const loadProgrammes = async () => {
+    try {
+      setProgrammesLoading(true);
+      // Use static programmes data instead of API
+      setProgrammes(staticProgrammesData);
+    } catch (err) {
+      console.error('Error loading programmes:', err);
+    } finally {
+      setProgrammesLoading(false);
+    }
+  };
+
+  const handleProgrammeSelect = async (programmeId: number) => {
+    setSelectedProgrammeId(programmeId);
+    // Store programme in formData
+    setFormData(prev => ({
+      ...prev,
+      assignedProgrammeId: programmeId
+    }));
+    
+    try {
+      setProgrammesLoading(true);
+      // Find programme from static data
+      const programme = staticProgrammesData.find(p => p.id === programmeId);
+      setSelectedProgrammeDetails(programme || null);
+    } catch (err) {
+      console.error('Error loading programme details:', err);
+    } finally {
+      setProgrammesLoading(false);
+    }
+  };
 
   const validateForm = () => {
     const newErrors: { [key: string]: string } = {};
@@ -40,6 +105,9 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
     }
     if (formData.password !== formData.confirmPassword) {
       newErrors.confirmPassword = 'Passwords do not match';
+    }
+    if (!formData.role) {
+      newErrors.role = 'Please select a role';
     }
     if (!formData.agreeToTerms) {
       newErrors.agreeToTerms = 'Please agree to terms and conditions';
@@ -71,7 +139,9 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
       formData.fullName,
       formData.employeeCode,
       formData.password,
-      formData.confirmPassword
+      formData.confirmPassword,
+      formData.role,
+      formData.assignedProgrammeId
     );
 
     if (success) {
@@ -244,6 +314,92 @@ export const RegistrationPage: React.FC<RegistrationPageProps> = ({
               </div>
               {localErrors.confirmPassword && <p className="text-red-300 text-xs mt-1">{localErrors.confirmPassword}</p>}
             </div>
+
+            {/* Role Selection */}
+            <div>
+              <label className="block text-sm font-semibold text-white mb-2">Select Your Role</label>
+              <select
+                name="role"
+                value={formData.role}
+                onChange={handleChange}
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all cursor-pointer"
+                disabled={isLoading}
+              >
+                <option value="ADMIN" className="bg-slate-900 text-white">Admin</option>
+                <option value="PROJECT_DIRECTOR" className="bg-slate-900 text-white">Project Director</option>
+                <option value="PROGRAMME_DIRECTOR" className="bg-slate-900 text-white">Programme Director</option>
+                <option value="CHAIRMAN" className="bg-slate-900 text-white">Chairman</option>
+              </select>
+              {localErrors.role && <p className="text-red-300 text-xs mt-1">{localErrors.role}</p>}
+              <p className="text-xs text-indigo-300 mt-1">Choose the role that matches your position</p>
+            </div>
+
+            {/* Programme Selection for Programme Directors */}
+            {formData.role === 'PROGRAMME_DIRECTOR' && (
+              <div className="bg-indigo-500/20 border border-indigo-500/50 rounded-lg p-4 space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold text-white mb-2">
+                    Select Your Programme *
+                  </label>
+                  <select
+                    value={selectedProgrammeId || ''}
+                    onChange={(e) => handleProgrammeSelect(Number(e.target.value))}
+                    className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all cursor-pointer"
+                    disabled={programmesLoading}
+                  >
+                    <option value="">
+                      {programmesLoading ? 'Loading programmes...' : 'Select a programme'}
+                    </option>
+                    {programmes && programmes.length > 0 ? (
+                      programmes.map((prog: any) => (
+                        <option key={prog.id} value={prog.id}>
+                          {prog.programmeName || prog.name}
+                        </option>
+                      ))
+                    ) : (
+                      <option disabled>No programmes available</option>
+                    )}
+                  </select>
+                </div>
+
+                {/* Programme Details Display */}
+                {selectedProgrammeDetails && (
+                  <div className="p-3 bg-white/10 border border-white/20 rounded-lg space-y-2">
+                    <h3 className="font-semibold text-white">Programme Details</h3>
+                    <div className="space-y-1 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-indigo-200">Programme Name:</span>
+                        <span className="text-white font-medium">{selectedProgrammeDetails.programmeName}</span>
+                      </div>
+                      {selectedProgrammeDetails.description && (
+                        <div className="flex justify-between">
+                          <span className="text-indigo-200">Description:</span>
+                          <span className="text-white font-medium text-right">{selectedProgrammeDetails.description}</span>
+                        </div>
+                      )}
+                      {selectedProgrammeDetails.status && (
+                        <div className="flex justify-between">
+                          <span className="text-indigo-200">Status:</span>
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                            selectedProgrammeDetails.status === 'ACTIVE' 
+                              ? 'bg-green-500/30 text-green-200' 
+                              : 'bg-gray-500/30 text-gray-200'
+                          }`}>
+                            {selectedProgrammeDetails.status}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {selectedProgrammeId && !selectedProgrammeDetails && !programmesLoading && (
+                  <div className="p-2 bg-yellow-500/20 border border-yellow-500/50 rounded">
+                    <p className="text-xs text-yellow-200">Loading programme details...</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Terms & Conditions */}
             <div className="flex items-start gap-3 pt-2">

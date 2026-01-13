@@ -1,0 +1,3 @@
+-- Rename V002__add_assigned_programme.sql migration
+-- This file should have been V002, keeping track of order
+-- All subsequent files are properly numbered starting from V003

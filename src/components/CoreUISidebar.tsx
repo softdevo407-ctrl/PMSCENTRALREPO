@@ -10,6 +10,7 @@ import {
   Menu,
   X,
   ChevronRight,
+  Plus,
 } from 'lucide-react';
 import { UserRole } from '../pbemTypes';
 
@@ -56,12 +57,12 @@ const CoreUISidebar: React.FC<CoreUISidebarProps> = ({
     if (userRole === 'Project Director') {
       return [
         ...baseItems,
-        {
-          id: 'new-project',
-          label: 'New Project',
-          icon: <Plus className="w-5 h-5" />,
-          onClick: () => onNavigate('new-project'),
-        },
+        // {
+        //   id: 'new-project',
+        //   label: 'New Project',
+        //   icon: <Plus className="w-5 h-5" />,
+        //   onClick: () => onNavigate('new-project'),
+        // },
         {
           id: 'my-projects',
           label: 'My Projects',
@@ -111,6 +112,23 @@ const CoreUISidebar: React.FC<CoreUISidebarProps> = ({
           onClick: () => onNavigate('reports'),
         },
       ];
+    } else if (userRole === 'Admin') {
+      return [
+        ...baseItems,
+        {
+          id: 'role-management',
+          label: 'Role Management',
+          icon: <Users className="w-5 h-5" />,
+          onClick: () => onNavigate('role-management'),
+        },
+        {
+          id: 'approvals',
+          label: 'Approvals',
+          icon: <CheckSquare className="w-5 h-5" />,
+          badge: pendingCount > 0 ? pendingCount.toString() : undefined,
+          onClick: () => onNavigate('approvals'),
+        },
+      ];
     } else if (userRole === 'Chairman') {
       return [
         ...baseItems,
@@ -149,6 +167,8 @@ const CoreUISidebar: React.FC<CoreUISidebarProps> = ({
 
   const getRoleColor = (role: UserRole) => {
     switch (role) {
+      case 'Admin':
+        return 'from-orange-600 to-orange-800';
       case 'Project Director':
         return 'from-blue-600 to-blue-800';
       case 'Programme Director':
@@ -252,8 +272,5 @@ const CoreUISidebar: React.FC<CoreUISidebarProps> = ({
     </>
   );
 };
-
-// Icon import fix
-import { Plus } from 'lucide-react';
 
 export default CoreUISidebar;

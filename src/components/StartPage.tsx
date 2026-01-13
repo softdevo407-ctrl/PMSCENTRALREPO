@@ -40,12 +40,14 @@ const StartPage: React.FC<StartPageProps> = ({ onGetStarted, onLoginSuccess }) =
   }, [isAuthenticated, user, onLoginSuccess]);
 
   const handleLoginSuccess = (employeeCode: string) => {
-    if (user && onLoginSuccess) {
-      onLoginSuccess(user.fullName, user.role);
-    }
+    // User data is automatically synced from useAuth hook
+    // The parent component (App.tsx) will detect the user state change and show the dashboard
+    // This callback is intentionally minimal to avoid race conditions
   };
 
   const handleRegistrationSuccess = (userName: string) => {
+    // After registration, the user is logged in and auth data is saved
+    // Trigger the parent callback to ensure the dashboard loads
     if (user && onLoginSuccess) {
       onLoginSuccess(user.fullName, user.role);
     }

@@ -25,6 +25,11 @@ public class SignupRequest {
     @NotBlank(message = "Confirm password is required")
     private String confirmPassword;
 
+    @NotBlank(message = "Role is required")
+    private String role;
+
     @lombok.Builder.Default
     private Boolean agreeToTerms = false;
+
+    private Long assignedProgrammeId;
 }
