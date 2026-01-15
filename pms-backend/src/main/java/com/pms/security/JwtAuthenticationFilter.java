@@ -25,6 +25,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
+        String requestPath = request.getRequestURI();
+        String servletPath = request.getServletPath();
+        
+        log.debug("Request URI: {}, Servlet Path: {}", requestPath, servletPath);
+        
+        // Skip JWT validation for auth and generics/lookup endpoints
+        if (servletPath != null && (servletPath.contains("auth") || servletPath.contains("programme-offices") 
+                || servletPath.contains("programme-types") || servletPath.contains("project-activities") 
+                || servletPath.contains("project-categories") || servletPath.contains("project-milestones") 
+                || servletPath.contains("project-phases-generic") || servletPath.contains("sanctioning-authorities")
+                || servletPath.contains("employee-details"))) {
+            log.debug("Skipping JWT validation for auth/generics/lookup endpoints");
+            filterChain.doFilter(request, response);
+            return;
+        }
+        
         try {
             String token = extractTokenFromRequest(request);
             if (token != null && jwtUtil.validateToken(token)) {

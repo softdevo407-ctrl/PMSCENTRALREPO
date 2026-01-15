@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Eye, TrendingUp, AlertCircle, CheckCircle2, DollarSign, Calendar, Plus, Filter, Loader2, Edit, Zap, X } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
-import { projectService, ProjectDefinitionResponse } from '../../services/projectService';
+import { projectDetailService, ProjectDetailResponse } from '../../services/projectDetailService';
 import { AddPhaseModal } from '../AddPhaseModal';
 import { ProjectPhasesPanel } from '../ProjectPhasesPanel';
-import { AddProjectModal } from '../AddProjectModal';
+import { AddProjectDefinitionModal } from '../AddProjectDefinitionModal';
 import { StatusUpdationModal } from '../StatusUpdationModal';
 
 interface MyProjectsPageProps {
@@ -13,9 +13,9 @@ interface MyProjectsPageProps {
 
 export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName }) => {
   const { user } = useAuth();
-  const [selectedProject, setSelectedProject] = useState<number | null>(null);
+  const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [myProjects, setMyProjects] = useState<ProjectDefinitionResponse[]>([]);
+  const [myProjects, setMyProjects] = useState<ProjectDetailResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isAddPhaseModalOpen, setIsAddPhaseModalOpen] = useState(false);
@@ -23,18 +23,18 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName }) => {
   const [isStatusUpdationModalOpen, setIsStatusUpdationModalOpen] = useState(false);
   const [phasesRefreshKey, setPhasesRefreshKey] = useState(0);
   const [editingPhaseId, setEditingPhaseId] = useState<number | null>(null);
-  const [editingProjectId, setEditingProjectId] = useState<number | null>(null);
+  const [editingProjectCode, setEditingProjectCode] = useState<string | null>(null);
 
   // Fetch projects for current user
   useEffect(() => {
     const fetchProjects = async () => {
-      if (!user?.id) return;
-      
       try {
         setLoading(true);
         setError(null);
-        const projects = await projectService.getProjectsByDirector(user.id);
-        setMyProjects(projects);
+        
+        // Fetch all project definitions from new service
+        const projectDefinitions = await projectDetailService.getAllProjectDetails();
+        setMyProjects(projectDefinitions || []);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Failed to fetch projects';
         setError(errorMsg);
@@ -48,22 +48,25 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName }) => {
 
   const filteredProjects = filterStatus === 'all' 
     ? myProjects 
-    : myProjects.filter(p => p.status === filterStatus);
+    : myProjects.filter(p => p.currentStatus === filterStatus);
 
-  const totalBudget = myProjects.reduce((sum, p) => sum + p.sanctionedAmount, 0);
+  const totalBudget = myProjects.reduce((sum, p) => {
+    return sum + (p.sanctionedCost || 0);
+  }, 0);
+  
   const statusCounts = {
-    onTrack: myProjects.filter(p => p.status === 'ON_TRACK').length,
-    atRisk: myProjects.filter(p => p.status === 'AT_RISK').length,
-    delayed: myProjects.filter(p => p.status === 'DELAYED').length,
+    onTrack: myProjects.filter(p => p.currentStatus === 'ON_TRACK').length,
+    atRisk: myProjects.filter(p => p.currentStatus === 'AT_RISK').length,
+    delayed: myProjects.filter(p => p.currentStatus === 'DELAYED').length,
   };
 
-  const selectedProjectData = myProjects.find(p => p.id === selectedProject);
+  const selectedProjectData = myProjects.find(p => p.missionProjectCode === selectedProject);
 
   const budgetBreakup = selectedProjectData ? {
-    planning: selectedProjectData.sanctionedAmount * 0.15,
-    development: selectedProjectData.sanctionedAmount * 0.45,
-    testing: selectedProjectData.sanctionedAmount * 0.25,
-    deployment: selectedProjectData.sanctionedAmount * 0.15
+    planning: (selectedProjectData.sanctionedCost || 0) * 0.15,
+    development: (selectedProjectData.sanctionedCost || 0) * 0.45,
+    testing: (selectedProjectData.sanctionedCost || 0) * 0.25,
+    deployment: (selectedProjectData.sanctionedCost || 0) * 0.15
   } : null;
 
   const getStatusColor = (status: string) => {
@@ -77,7 +80,7 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName }) => {
     }
   };
 
-  const getStatusLabel = (status: string) => {
+  const getStatusLabel = (status: string | undefined) => {
     const labels: Record<string, string> = {
       'ON_TRACK': 'On Track',
       'AT_RISK': 'At Risk',
@@ -85,7 +88,7 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName }) => {
       'COMPLETED': 'Completed',
       'ON_HOLD': 'On Hold'
     };
-    return labels[status] || status;
+    return status ? labels[status] || status : 'Unknown';
   };
 
   if (loading) {
@@ -117,7 +120,7 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName }) => {
         </div>
         <button 
           onClick={() => {
-            setEditingProjectId(null);
+            setEditingProjectCode(null);
             setIsAddProjectModalOpen(true);
           }}
           className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center gap-2"
@@ -175,36 +178,37 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName }) => {
           <div className="grid grid-cols-1 gap-4">
             {filteredProjects.map(project => (
               <div
-                key={project.id}
-                onClick={() => setSelectedProject(project.id)}
+                key={project.missionProjectCode}
+                onClick={() => setSelectedProject(project.missionProjectCode)}
                 className={`bg-white rounded-lg border-2 p-6 cursor-pointer transition-all hover:shadow-lg ${
-                  selectedProject === project.id
+                  selectedProject === project.missionProjectCode
                     ? 'border-blue-500 bg-blue-50'
                     : 'border-gray-200 hover:border-blue-300'
                 }`}
               >
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <h3 className="text-lg font-bold text-gray-900">{project.projectName}</h3>
-                    <p className="text-sm text-gray-600 mt-1">{project.shortName} • {project.category}</p>
+                    <h3 className="text-lg font-bold text-gray-900">{project.missionProjectFullName}</h3>
+                    <p className="text-sm text-gray-600 mt-1">{project.missionProjectShortName} • {project.projectCategoryCode}</p>
                   </div>
-                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(project.status)}`}>
-                    {getStatusLabel(project.status)}
+                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(project.currentStatus)}`}>
+                    {getStatusLabel(project.currentStatus)}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-3 gap-4 mb-4">
                   <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Budget</p>
-                    <p className="text-lg font-bold text-gray-900 mt-1">₹{(project.sanctionedAmount / 10000000).toFixed(1)}Cr</p>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Budget (Sanctioned Cost)</p>
+                    <p className="text-lg font-bold text-gray-900 mt-1">₹{((project.sanctionedCost || 0) / 100000).toFixed(2)}L</p>
+                    <p className="text-xs text-gray-400 mt-1">{((project.sanctionedCost || 0) / 10000000).toFixed(1)} Cr</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Programme</p>
-                    <p className="text-sm font-bold text-gray-900 mt-1">{project.programmeName}</p>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Category</p>
+                    <p className="text-sm font-bold text-gray-900 mt-1">{project.projectCategoryCode}</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">End Date</p>
-                    <p className="text-lg font-bold text-gray-900 mt-1">{new Date(project.endDate).toLocaleDateString()}</p>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide">Schedule</p>
+                    <p className="text-lg font-bold text-gray-900 mt-1">{project.originalSchedule ? new Date(project.originalSchedule).toLocaleDateString() : '-'}</p>
                   </div>
                 </div>
 
@@ -213,7 +217,7 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName }) => {
                   <button 
                     onClick={(e) => {
                       e.stopPropagation();
-                      setSelectedProject(project.id);
+                      setSelectedProject(project.missionProjectCode);
                     }}
                     className="flex-1 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm font-medium flex items-center justify-center gap-1"
                   >
@@ -223,7 +227,7 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName }) => {
                   <button 
                     onClick={(e) => {
                       e.stopPropagation();
-                      setEditingProjectId(project.id);
+                      setEditingProjectCode(project.missionProjectCode);
                       setIsAddProjectModalOpen(true);
                     }}
                     className="flex-1 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium flex items-center justify-center gap-1"
@@ -253,12 +257,12 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName }) => {
                 <h3 className="text-lg font-bold text-gray-900 mb-4">Project Details</h3>
                 <div className="space-y-3 text-sm">
                   <div>
-                    <p className="text-gray-600">Programme</p>
-                    <p className="font-semibold text-gray-900">{selectedProjectData.programmeName}</p>
+                    <p className="text-gray-600">Project Code</p>
+                    <p className="font-mono text-gray-900 font-semibold">{selectedProjectData.missionProjectCode}</p>
                   </div>
                   <div>
-                    <p className="text-gray-600">Lead Centre</p>
-                    <p className="font-semibold text-gray-900">{selectedProjectData.leadCentre}</p>
+                    <p className="text-gray-600">Full Name</p>
+                    <p className="font-semibold text-gray-900">{selectedProjectData.missionProjectFullName}</p>
                   </div>
                   <div>
                     <p className="text-gray-600">Budget Code</p>
@@ -266,16 +270,16 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName }) => {
                   </div>
                   <div>
                     <p className="text-gray-600">Category</p>
-                    <p className="font-semibold text-gray-900">{selectedProjectData.category}</p>
+                    <p className="font-semibold text-gray-900">{selectedProjectData.projectCategoryCode}</p>
                   </div>
                   <div className="pt-3 border-t border-gray-200">
-                    <p className="text-gray-600">Total Budget</p>
-                    <p className="text-xl font-bold text-blue-600">₹{(selectedProjectData.sanctionedAmount / 10000000).toFixed(1)}Cr</p>
+                    <p className="text-gray-600">Sanctioned Cost</p>
+                    <p className="text-xl font-bold text-blue-600">₹{((selectedProjectData.sanctionedCost || 0) / 10000000).toFixed(1)}Cr</p>
                   </div>
                   <div>
                     <p className="text-gray-600">Status</p>
-                    <span className={`inline-block mt-1 px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(selectedProjectData.status)}`}>
-                      {getStatusLabel(selectedProjectData.status)}
+                    <span className={`inline-block mt-1 px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(selectedProjectData.currentStatus)}`}>
+                      {getStatusLabel(selectedProjectData.currentStatus)}
                     </span>
                   </div>
                 </div>
@@ -285,7 +289,7 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName }) => {
 
               {/* Project Phases */}
               <ProjectPhasesPanel 
-                projectId={selectedProject || 0} 
+                projectId={selectedProject ? parseInt(selectedProject) : 0} 
                 isOpen={true}
                 refreshKey={phasesRefreshKey}
                 onEditPhase={(phaseId) => {
@@ -329,7 +333,7 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName }) => {
 
           {/* Add Phase Modal */}
           <AddPhaseModal
-            projectId={selectedProject || 0}
+            projectId={selectedProject ? parseInt(selectedProject) : 0}
             phaseId={editingPhaseId || undefined}
             isOpen={isAddPhaseModalOpen}
             onClose={() => {
@@ -341,42 +345,42 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName }) => {
               setPhasesRefreshKey(prev => prev + 1);
               // Clear edit state
               setEditingPhaseId(null);
-              // Optionally refetch projects too
-              if (user?.id) {
-                projectService.getProjectsByDirector(user.id)
-                  .then(projects => setMyProjects(projects))
-                  .catch(err => console.error('Failed to refetch projects:', err));
-              }
+              // Refetch projects
+              projectDetailService.getAllProjectDetails()
+                .then(projects => setMyProjects(projects || []))
+                .catch(err => console.error('Failed to refetch projects:', err));
             }}
           />
 
-          {/* Add/Edit Project Modal */}
-          <AddProjectModal
+          {/* Add/Edit Project Definition Modal */}
+          <AddProjectDefinitionModal
             isOpen={isAddProjectModalOpen}
-            projectId={editingProjectId || undefined}
+            projectCode={editingProjectCode || undefined}
             onClose={() => {
               setIsAddProjectModalOpen(false);
-              setEditingProjectId(null);
+              setEditingProjectCode(null);
             }}
             onSuccess={() => {
-              // Refetch projects
-              if (user?.id) {
-                projectService.getProjectsByDirector(user.id)
-                  .then(projects => setMyProjects(projects))
-                  .catch(err => console.error('Failed to refetch projects:', err));
-              }
+              // Refetch project definitions
+              projectDetailService.getAllProjectDetails()
+                .then(projects => setMyProjects(projects || []))
+                .catch(err => console.error('Failed to refetch projects:', err));
             }}
           />
 
           {/* Status Updation Modal */}
-          {selectedProject && (
+          {selectedProject && selectedProjectData && (
             <StatusUpdationModal
               isOpen={isStatusUpdationModalOpen}
-              projectId={selectedProject}
+              projectId={parseInt(selectedProject) || 0}
               onClose={() => setIsStatusUpdationModalOpen(false)}
               onSuccess={() => {
                 // Refresh phases
                 setPhasesRefreshKey(prev => prev + 1);
+                // Refetch projects
+                projectDetailService.getAllProjectDetails()
+                  .then(projects => setMyProjects(projects || []))
+                  .catch(err => console.error('Failed to refetch projects:', err));
               }}
             />
           )}

@@ -51,16 +51,16 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClos
 
   // Static Programme Directors with numeric IDs
   const staticProgrammeDirectors = [
-    { id: 1, fullName: 'Dr. Rajesh Kumar' },
+    { id: 2, fullName: 'Dr. Rajesh Kumar' },
     { id: 2, fullName: 'Dr. Priya Sharma' },
-    { id: 3, fullName: 'Dr. Amit Patel' }
+    { id: 2, fullName: 'Dr. Amit Patel' }
   ];
 
   // Static Project Directors with numeric IDs
   const staticProjectDirectors = [
-    { id: 4, fullName: 'Vikram Singh' },
-    { id: 5, fullName: 'Neha Gupta' },
-    { id: 6, fullName: 'Arun Kumar' }
+    { id: 1, fullName: 'Vikram Singh' },
+    { id: 1, fullName: 'Neha Gupta' },
+    { id: 1, fullName: 'Arun Kumar' }
   ];
 
   // Load static directors on component mount

@@ -26,6 +26,15 @@ import { OversightPage } from './src/components/pages/OversightPage';
 import { AnalyticsPage } from './src/components/pages/AnalyticsPage';
 import { ReportsPage } from './src/components/pages/ReportsPage';
 import { RoleManagementPage } from './src/components/pages/RoleManagementPage';
+import { ProgrammeOfficeManagementPage } from './src/components/pages/ProgrammeOfficeManagementPage';
+import { ProgrammeTypeManagementPage } from './src/components/pages/ProgrammeTypeManagementPage';
+import { ProjectActivityManagementPage } from './src/components/pages/ProjectActivityManagementPage';
+import { ProjectCategoryManagementPage } from './src/components/pages/ProjectCategoryManagementPage';
+import { ProjectMilestoneManagementPage } from './src/components/ProjectMilestoneManagementPage';
+import { ProjectPhaseGenericManagementPage } from './src/components/ProjectPhaseGenericManagementPage';
+import { BudgetCentreProjectCodeManagementPage } from './src/components/pages/BudgetCentreProjectCodeManagementPage';
+import ProjectDefinitionPage from './src/components/pages/ProjectDefinitionPage';
+import { SanctioningAuthorityManagementPage } from './src/components/pages/SanctioningAuthorityManagementPage';
 import { 
   ArrowLeft, 
   Plus, 
@@ -36,7 +45,7 @@ import {
   Settings
 } from 'lucide-react';
 
-const API_BASE_URL = 'http://localhost:8080/api/projects';
+const API_BASE_URL = 'http://localhost:7080/api/projects';
 
 type View = 'DASHBOARD' | 'CATEGORY_DETAIL' | 'PROJECT_DETAIL' | 'PMS';
 type AppMode = 'BUDGET' | 'PMS' | 'START' | 'LEGACY_PMS';
@@ -247,6 +256,33 @@ const App: React.FC = () => {
         {currentPage === 'role-management' && userRole === 'Admin' && (
           <RoleManagementPage />
         )}
+        {currentPage === 'programme-offices' && userRole === 'Admin' && (
+          <ProgrammeOfficeManagementPage userName={currentUserName} />
+        )}
+        {currentPage === 'programme-types' && userRole === 'Admin' && (
+          <ProgrammeTypeManagementPage userName={currentUserName} />
+        )}
+        {currentPage === 'project-activities' && userRole === 'Admin' && (
+          <ProjectActivityManagementPage userName={currentUserName} />
+        )}
+        {currentPage === 'project-categories' && userRole === 'Admin' && (
+          <ProjectCategoryManagementPage userName={currentUserName} />
+        )}
+        {currentPage === 'project-milestones' && userRole === 'Admin' && (
+          <ProjectMilestoneManagementPage userName={currentUserName} />
+        )}
+        {currentPage === 'project-phases-generic' && userRole === 'Admin' && (
+          <ProjectPhaseGenericManagementPage userName={currentUserName} />
+        )}
+        {currentPage === 'budget-centre-project-codes' && userRole === 'Admin' && (
+          <BudgetCentreProjectCodeManagementPage userName={currentUserName} />
+        )}
+        {currentPage === 'sanctioning-authorities' && userRole === 'Admin' && (
+          <SanctioningAuthorityManagementPage userName={currentUserName} />
+        )}
+        {currentPage === 'project-definition' && userRole === 'Admin' && (
+          <ProjectDefinitionPage />
+        )}
 
         {/* PROJECT DIRECTOR PAGES */}
         {currentPage === 'dashboard' && userRole === 'Project Director' && (
@@ -256,7 +292,7 @@ const App: React.FC = () => {
           />
         )}
         {currentPage === 'new-project' && userRole === 'Project Director' && (
-          <NewProjectPage userName={currentUserName} />
+          <ProjectDefinitionPage autoOpenForm={true} />
         )}
         {currentPage === 'my-projects' && userRole === 'Project Director' && (
           <MyProjectsPage userName={currentUserName} />

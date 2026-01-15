@@ -11,6 +11,7 @@ import {
   X,
   ChevronRight,
   Plus,
+  ChevronDown,
 } from 'lucide-react';
 import { UserRole } from '../pbemTypes';
 
@@ -22,6 +23,15 @@ interface SidebarItem {
   active?: boolean;
   onClick: () => void;
 }
+
+interface SidebarGroup {
+  id: string;
+  label: string;
+  icon: React.ReactNode;
+  submenu: SidebarItem[];
+}
+
+type SidebarMenuItem = SidebarItem | SidebarGroup;
 
 interface CoreUISidebarProps {
   isOpen: boolean;
@@ -44,7 +54,21 @@ const CoreUISidebar: React.FC<CoreUISidebarProps> = ({
   pendingCount = 0,
   onLogout,
 }) => {
-  const getSidebarItems = (): SidebarItem[] => {
+  const [expandedGroups, setExpandedGroups] = React.useState<string[]>(['generics']);
+
+  const isGroup = (item: SidebarMenuItem): item is SidebarGroup => {
+    return 'submenu' in item;
+  };
+
+  const toggleGroup = (groupId: string) => {
+    setExpandedGroups(prev =>
+      prev.includes(groupId)
+        ? prev.filter(id => id !== groupId)
+        : [...prev, groupId]
+    );
+  };
+
+  const getSidebarItems = (): SidebarMenuItem[] => {
     const baseItems: SidebarItem[] = [
       {
         id: 'dashboard',
@@ -57,12 +81,12 @@ const CoreUISidebar: React.FC<CoreUISidebarProps> = ({
     if (userRole === 'Project Director') {
       return [
         ...baseItems,
-        // {
-        //   id: 'new-project',
-        //   label: 'New Project',
-        //   icon: <Plus className="w-5 h-5" />,
-        //   onClick: () => onNavigate('new-project'),
-        // },
+        {
+          id: 'new-project',
+          label: 'New Project',
+          icon: <Plus className="w-5 h-5" />,
+          onClick: () => onNavigate('new-project'),
+        },
         {
           id: 'my-projects',
           label: 'My Projects',
@@ -115,6 +139,67 @@ const CoreUISidebar: React.FC<CoreUISidebarProps> = ({
     } else if (userRole === 'Admin') {
       return [
         ...baseItems,
+        {
+          id: 'generics',
+          label: 'Generics',
+          icon: <Settings className="w-5 h-5" />,
+          submenu: [
+            {
+              id: 'programme-offices',
+              label: 'Programme Offices',
+              icon: <Users className="w-5 h-5" />,
+              onClick: () => onNavigate('programme-offices'),
+            },
+            {
+              id: 'programme-types',
+              label: 'Programme Types',
+              icon: <Users className="w-5 h-5" />,
+              onClick: () => onNavigate('programme-types'),
+            },
+            {
+              id: 'project-activities',
+              label: 'Project Activities',
+              icon: <Users className="w-5 h-5" />,
+              onClick: () => onNavigate('project-activities'),
+            },
+            {
+              id: 'project-categories',
+              label: 'Project Categories',
+              icon: <Users className="w-5 h-5" />,
+              onClick: () => onNavigate('project-categories'),
+            },
+            {
+              id: 'project-milestones',
+              label: 'Project Milestones',
+              icon: <Users className="w-5 h-5" />,
+              onClick: () => onNavigate('project-milestones'),
+            },
+            {
+              id: 'project-phases-generic',
+              label: 'Project Phases',
+              icon: <Users className="w-5 h-5" />,
+              onClick: () => onNavigate('project-phases-generic'),
+            },
+            {
+              id: 'budget-centre-project-codes',
+              label: 'Budget  Codes',
+              icon: <Users className="w-5 h-5" />,
+              onClick: () => onNavigate('budget-centre-project-codes'),
+            },
+            {
+              id: 'sanctioning-authorities',
+              label: 'Sanctioning Authorities',
+              icon: <Users className="w-5 h-5" />,
+              onClick: () => onNavigate('sanctioning-authorities'),
+            },
+            {
+              id: 'project-definition',
+              label: 'Project Definitions',
+              icon: <FileText className="w-5 h-5" />,
+              onClick: () => onNavigate('project-definition'),
+            },
+          ],
+        },
         {
           id: 'role-management',
           label: 'Role Management',
@@ -212,27 +297,75 @@ const CoreUISidebar: React.FC<CoreUISidebarProps> = ({
           <ul className="space-y-2">
             {sidebarItems.map((item) => (
               <li key={item.id}>
-                <button
-                  onClick={() => {
-                    item.onClick();
-                    if (window.innerWidth < 1024) onToggle();
-                  }}
-                  className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all ${
-                    currentPage === item.id
-                      ? 'bg-blue-600 text-white shadow-lg'
-                      : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    {item.icon}
-                    <span className="font-medium text-sm">{item.label}</span>
-                  </div>
-                  {item.badge && (
-                    <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
+                {isGroup(item) ? (
+                  <>
+                    <button
+                      onClick={() => toggleGroup(item.id)}
+                      className="w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all text-gray-300 hover:bg-gray-700 hover:text-white"
+                    >
+                      <div className="flex items-center gap-3">
+                        {item.icon}
+                        <span className="font-medium text-sm">{item.label}</span>
+                      </div>
+                      <ChevronDown
+                        className={`w-4 h-4 transition-transform ${
+                          expandedGroups.includes(item.id) ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+                    {expandedGroups.includes(item.id) && (
+                      <ul className="mt-1 ml-4 space-y-1">
+                        {item.submenu.map((subitem) => (
+                          <li key={subitem.id}>
+                            <button
+                              onClick={() => {
+                                subitem.onClick();
+                                if (window.innerWidth < 1024) onToggle();
+                              }}
+                              className={`w-full flex items-center justify-between px-4 py-2 rounded-lg transition-all text-sm ${
+                                currentPage === subitem.id
+                                  ? 'bg-blue-600 text-white shadow-lg'
+                                  : 'text-gray-400 hover:bg-gray-700 hover:text-white'
+                              }`}
+                            >
+                              <div className="flex items-center gap-3">
+                                {subitem.icon}
+                                <span className="font-medium">{subitem.label}</span>
+                              </div>
+                              {subitem.badge && (
+                                <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                  {subitem.badge}
+                                </span>
+                              )}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </>
+                ) : (
+                  <button
+                    onClick={() => {
+                      item.onClick();
+                      if (window.innerWidth < 1024) onToggle();
+                    }}
+                    className={`w-full flex items-center justify-between px-4 py-3 rounded-lg transition-all ${
+                      currentPage === item.id
+                        ? 'bg-blue-600 text-white shadow-lg'
+                        : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      {item.icon}
+                      <span className="font-medium text-sm">{item.label}</span>
+                    </div>
+                    {item.badge && (
+                      <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                        {item.badge}
+                      </span>
+                    )}
+                  </button>
+                )}
               </li>
             ))}
           </ul>

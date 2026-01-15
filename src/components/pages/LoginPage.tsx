@@ -21,11 +21,12 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [localError, setLocalError] = useState('');
   const { login, isLoading, error: authError } = useAuth();
 
-  // Demo users for quick testing (optional, remove if not needed)
+  // Demo users for quick testing
   const demoUsers = [
-    { employeeCode: 'EMP001', password: 'demo123', name: 'Rajesh Kumar', role: 'Project Director' },
-    { employeeCode: 'EMP002', password: 'demo123', name: 'Priya Sharma', role: 'Programme Director' },
-    { employeeCode: 'EMP003', password: 'demo123', name: 'Vikram Singh', role: 'Chairman' },
+    { employeeCode: 'EMP001', password: 'password123', name: 'Admin User', role: 'Admin' },
+    { employeeCode: 'EMP002', password: 'password123', name: 'Project Director User', role: 'Project Director' },
+    { employeeCode: 'EMP003', password: 'password123', name: 'Programme Director User', role: 'Programme Director' },
+    { employeeCode: 'EMP004', password: 'password123', name: 'Chairman User', role: 'Chairman' },
   ];
 
   const handleSubmit = async (e: React.FormEvent) => {

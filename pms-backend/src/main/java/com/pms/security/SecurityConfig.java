@@ -86,8 +86,17 @@ public class SecurityConfig {
                 .authenticationProvider(authenticationProvider())
                 .addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(authz -> authz
-                        .requestMatchers("/auth/**").permitAll()
+                        .requestMatchers("/auth/**", "/api/auth/**").permitAll()
+                        .requestMatchers("/programme-offices/**").permitAll()
+                        .requestMatchers("/programme-types/**").permitAll()
+                        .requestMatchers("/project-activities/**").permitAll()
+                        .requestMatchers("/project-categories/**").permitAll()
+                        .requestMatchers("/project-milestones/**").permitAll()
+                        .requestMatchers("/project-phases-generic/**").permitAll()
+                        .requestMatchers("/sanctioning-authorities/**").permitAll()
+                        .requestMatchers("/employee-details/**").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
+                        .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated()
                 );
 

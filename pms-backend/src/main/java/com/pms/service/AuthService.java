@@ -104,12 +104,16 @@ public class AuthService {
 
     public AuthResponse login(LoginRequest request) {
         try {
+            log.info("Attempting authentication for employee code: {}", request.getEmployeeCode());
+            
             Authentication authentication = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(
                             request.getEmployeeCode(),
                             request.getPassword()
                     )
             );
+
+            log.info("Authentication successful for: {}", request.getEmployeeCode());
 
             User user = userRepository.findByEmployeeCode(request.getEmployeeCode())
                     .orElseThrow(() -> new RuntimeException("User not found"));
@@ -129,7 +133,7 @@ public class AuthService {
                     .message("Login successful")
                     .build();
         } catch (Exception ex) {
-            log.error("Login failed: {}", ex.getMessage());
+            log.error("Login failed for employee code {}: {}", request.getEmployeeCode(), ex.getMessage(), ex);
             return AuthResponse.builder()
                     .success(false)
                     .message("Invalid employee code or password")

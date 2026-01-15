@@ -11,7 +11,9 @@ import java.util.Optional;
 @Repository
 public interface ProjectDefinitionRepository extends JpaRepository<ProjectDefinition, Long> {
     List<ProjectDefinition> findByProjectDirector(User projectDirector);
+    List<ProjectDefinition> findByProjectDirectorId(Long projectDirectorId);
     List<ProjectDefinition> findByProgrammeDirector(User programmeDirector);
+    List<ProjectDefinition> findByProgrammeDirectorId(Long programmeDirectorId);
     List<ProjectDefinition> findByProgrammeId(Long programmeId);
     List<ProjectDefinition> findAll();
     Optional<ProjectDefinition> findByShortName(String shortName);

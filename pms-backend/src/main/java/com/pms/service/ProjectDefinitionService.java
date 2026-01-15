@@ -36,20 +36,14 @@ public class ProjectDefinitionService {
     }
 
     public List<ProjectDefinitionResponse> getProjectsByProjectDirector(Long projectDirectorId) {
-        User projectDirector = userRepository.findById(projectDirectorId)
-                .orElseThrow(() -> new RuntimeException("Project Director not found"));
-        
-        return projectDefinitionRepository.findByProjectDirector(projectDirector)
+        return projectDefinitionRepository.findByProjectDirectorId(projectDirectorId)
                 .stream()
                 .map(this::convertToResponse)
                 .collect(Collectors.toList());
     }
 
     public List<ProjectDefinitionResponse> getProjectsByProgrammeDirector(Long programmeDirId) {
-        User programmeDirector = userRepository.findById(programmeDirId)
-                .orElseThrow(() -> new RuntimeException("Programme Director not found"));
-        
-        return projectDefinitionRepository.findByProgrammeDirector(programmeDirector)
+        return projectDefinitionRepository.findByProgrammeDirectorId(programmeDirId)
                 .stream()
                 .map(this::convertToResponse)
                 .collect(Collectors.toList());
