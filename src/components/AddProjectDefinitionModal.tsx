@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { X, AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { projectDetailService, ProjectDetailRequest, ProjectDetailResponse } from '../services/projectDetailService';
-import { ProjectCategoryService } from '../services/projectCategoryService';
 import { ProgrammeTypeService } from '../services/programmeTypeService';
+import { projectTypeService } from '../services/projectTypeService';
 import { budgetCentreProjectCodeService } from '../services/budgetCentreProjectCodeService';
 import { sanctioningAuthorityService } from '../services/sanctioningAuthorityService';
+import { projectStatusCodeService } from '../services/projectStatusCodeService';
+import { employeeDetailsService } from '../services/employeeDetailsService';
 import CoreUISearchableSelect from './CoreUISearchableSelect';
 
 interface AddProjectDefinitionModalProps {
@@ -25,9 +27,10 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
     missionProjectFullName: '',
     missionProjectShortName: '',
     missionProjectDescription: '',
-    projectCategoryCode: '',
     budgetCode: '',
+    programmeTypeCode: '',
     projectTypesCode: '',
+    leadCentreCode: '',
     sanctionedAuthority: '',
     individualCombinedSanctionCost: '',
     sanctionedCost: 0,
@@ -37,11 +40,6 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
     fsCopy: null,
     missionProjectDirector: '',
     programmeDirector: '',
-    cumExpUpToPrevFy: null,
-    curYrExp: null,
-    currentStatusPercentage: null,
-    currentStatus: '',
-    currentStatusRemarks: null,
   });
 
   const [errors, setErrors] = useState<Errors>({});
@@ -52,10 +50,13 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
   const [sanctionedCostLakhs, setSanctionedCostLakhs] = useState<number>(0);
   const [dropdownOptions, setDropdownOptions] = useState({
     categories: [] as Array<{ code: string; name: string; description?: string }>,
-    projectTypes: [] as Array<{ code: string; name: string; description?: string }>,
+    programmeTypes: [] as Array<{ code: string; name: string; description?: string; display?: string }>,
+    projectTypes: [] as Array<{ code: string; name: string; description?: string; display?: string }>,
     budgetCodes: [] as Array<{ code: string; name: string; description?: string }>,
     sanctioningAuthorities: [] as Array<{ code: string; name: string; description?: string }>,
     statuses: [] as Array<{ code: string; name: string }>,
+    employees: [] as Array<{ code: string; name: string; display: string }>,
+    leadCentres: [] as Array<{ code: string; name: string; display: string }>,
   });
 
   const tooltips: { [key: string]: string } = {
@@ -85,15 +86,17 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
   const loadProjectDetails = async (code: string) => {
     try {
       const project = await projectDetailService.getProjectDetailByCode(code);
-      const lakhsValue = project.sanctionedCost ? project.sanctionedCost / 100000 : 0; // Convert from actual amount to Lakhs
-      setSanctionedCostLakhs(lakhsValue);
+      console.log("project------------"+JSON.stringify(project));
+      //const lakhsValue = project.sanctionedCost ? project.sanctionedCost / 100000 : 0; // Convert from actual amount to Lakhs
+      setSanctionedCostLakhs(project.sanctionedCost);
       setFormData({
         missionProjectFullName: project.missionProjectFullName || '',
         missionProjectShortName: project.missionProjectShortName || '',
         missionProjectDescription: project.missionProjectDescription || '',
-        projectCategoryCode: project.projectCategoryCode || '',
         budgetCode: project.budgetCode || '',
+        programmeTypeCode: project.programmeTypeCode || '',
         projectTypesCode: project.projectTypesCode || '',
+        leadCentreCode: project.leadCentreCode || '',
         sanctionedAuthority: project.sanctionedAuthority || '',
         individualCombinedSanctionCost: project.individualCombinedSanctionCost || '',
         sanctionedCost: project.sanctionedCost || 0,
@@ -103,11 +106,6 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
         fsCopy: project.fsCopy || null,
         missionProjectDirector: project.missionProjectDirector || '',
         programmeDirector: project.programmeDirector || '',
-        cumExpUpToPrevFy: project.cumExpUpToPrevFy || null,
-        curYrExp: project.curYrExp || null,
-        currentStatusPercentage: project.currentStatusPercentage || null,
-        currentStatus: project.currentStatus || '',
-        currentStatusRemarks: project.currentStatusRemarks || null,
       });
     } catch (err) {
       setErrors({ submit: 'Failed to load project details' });
@@ -117,13 +115,13 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
   const loadDropdownOptions = async () => {
     try {
       console.log('Loading dropdown options...');
-      const [categories, programmeTypes, budgetCodes, sanctioningAuthorities] = await Promise.all([
-        ProjectCategoryService.getAllProjectCategories().catch(err => {
-          console.error('Failed to load categories:', err);
-          return [];
-        }),
+      const [programmeTypes, projectTypes, budgetCodes, sanctioningAuthorities, projectStatuses, employees] = await Promise.all([
         ProgrammeTypeService.getAllProgrammeTypes().catch(err => {
           console.error('Failed to load programme types:', err);
+          return [];
+        }),
+        projectTypeService.getAllProjectTypes().catch(err => {
+          console.error('Failed to load project types:', err);
           return [];
         }),
         budgetCentreProjectCodeService.getAllBudgetCentreProjectCodes().catch(err => {
@@ -134,20 +132,37 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
           console.error('Failed to load sanctioning authorities:', err);
           return [];
         }),
+        projectStatusCodeService.getAllProjectStatusCodes().catch(err => {
+          console.error('Failed to load project status codes:', err);
+          return [];
+        }),
+        employeeDetailsService.getAllEmployeeDetails().catch(err => {
+          console.error('Failed to load employees:', err);
+          return [];
+        }),
       ]);
 
       console.log('Loaded sanctioning authorities:', sanctioningAuthorities);
+      console.log('Loaded project statuses:', projectStatuses);
+      console.log('Loaded employees:', employees);
+      console.log('Loaded budget centre project codes:', budgetCodes);
+
+      // Filter lead centres by centreProject = 'C'
+      const leadCentres = (budgetCodes || []).filter(code => code.centreProject === 'C');
 
       setDropdownOptions({
-        categories: (categories || []).map(cat => ({
-          code: cat.projectCategoryCode,
-          name: cat.projectCategoryFullName,
-          description: cat.projectCategoryShortName,
-        })),
-        projectTypes: (programmeTypes || []).map(type => ({
+        categories: [], // Categories now come from programmeType selection
+        programmeTypes: (programmeTypes || []).map(type => ({
           code: type.programmeTypeCode,
           name: type.programmeTypeFullName,
           description: type.programmeTypeShortName,
+          display: `${type.programmeTypeFullName}-${type.programmeTypeShortName}`,
+        })),
+        projectTypes: (projectTypes || []).map(type => ({
+          code: type.projectTypesCode,
+          name: type.projectTypesFullName,
+          description: type.projectTypesShortName,
+          display: `${type.projectTypesFullName}-${type.projectTypesShortName}`,
         })),
         budgetCodes: (budgetCodes || []).map(bc => ({
           code: bc.centreProjectCode,
@@ -159,12 +174,20 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
           name: sa.sanctioningAuthorityFullName,
           description: sa.sanctioningAuthorityShortName,
         })),
-        statuses: [
-          { code: '01', name: 'On Track' },
-          { code: '02', name: 'At Risk' },
-          { code: '03', name: 'Delayed' },
-          { code: '04', name: 'Completed' },
-        ],
+        statuses: (projectStatuses || []).map(status => ({
+          code: status.projectStatusCode,
+          name: status.projectStatusFullName,
+        })),
+        employees: (employees || []).map(emp => ({
+          code: emp.employeeCode,
+          name: emp.name,
+          display: `${emp.employeeCode}-${emp.name}`,
+        })),
+        leadCentres: leadCentres.map(lc => ({
+          code: lc.centreProjectCode,
+          name: lc.budgetCentreProjectFullName,
+          display: lc.budgetCentreProjectShortName,
+        })),
       });
     } catch (err) {
       console.error('Failed to load dropdown options:', err);
@@ -172,6 +195,9 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
       setDropdownOptions(prev => ({
         ...prev,
         sanctioningAuthorities: [],
+        statuses: [],
+        employees: [],
+        leadCentres: [],
       }));
     }
   };
@@ -188,14 +214,17 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
     if (!formData.missionProjectDescription?.trim()) {
       newErrors.missionProjectDescription = 'Description is required';
     }
-    if (!formData.projectCategoryCode) {
-      newErrors.projectCategoryCode = 'Category is required';
-    }
     if (!formData.budgetCode) {
       newErrors.budgetCode = 'Budget code is required';
     }
+    if (!formData.programmeTypeCode) {
+      newErrors.programmeTypeCode = 'Programme type is required';
+    }
     if (!formData.projectTypesCode) {
       newErrors.projectTypesCode = 'Project type is required';
+    }
+    if (!formData.leadCentreCode) {
+      newErrors.leadCentreCode = 'Lead centre is required';
     }
     if (!formData.sanctionedAuthority?.trim()) {
       newErrors.sanctionedAuthority = 'Sanctioned authority is required';
@@ -218,19 +247,26 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
     if (!formData.programmeDirector) {
       newErrors.programmeDirector = 'Programme director is required';
     }
-    if (!formData.currentStatus) {
-      newErrors.currentStatus = 'Current status is required';
-    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleChange = (field: string, value: any) => {
-    setFormData(prev => ({
-      ...prev,
+    let updatedFormData = {
+      ...formData,
       [field]: value
-    }));
+    };
+
+    // When programmeType changes, auto-populate projectCategoryCode
+    if (field === 'projectTypesCode') {
+      const selectedType = dropdownOptions.projectTypes.find(pt => pt.code === value);
+      // We need to find the category code from the programme type
+      // This will be handled by fetching the full ProgrammeType details from backend
+      // For now, we'll store the code and let the backend handle the relationship
+    }
+
+    setFormData(updatedFormData);
     // Clear error for this field
     if (errors[field]) {
       setErrors(prev => ({
@@ -283,9 +319,10 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
       missionProjectFullName: '',
       missionProjectShortName: '',
       missionProjectDescription: '',
-      projectCategoryCode: '',
       budgetCode: '',
+      programmeTypeCode: '',
       projectTypesCode: '',
+      leadCentreCode: '',
       sanctionedAuthority: '',
       individualCombinedSanctionCost: '',
       sanctionedCost: 0,
@@ -295,11 +332,6 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
       fsCopy: null,
       missionProjectDirector: '',
       programmeDirector: '',
-      cumExpUpToPrevFy: null,
-      curYrExp: null,
-      currentStatusPercentage: null,
-      currentStatus: '',
-      currentStatusRemarks: null,
     });
     setSanctionedCostLakhs(0);
     setErrors({});
@@ -311,8 +343,8 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2">
-      <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl max-h-[95vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 overflow-hidden">
+      <div className="bg-white rounded-lg shadow-2xl w-full max-w-5xl max-h-[95vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="sticky top-0 bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 flex items-center justify-between">
           <h2 className="text-2xl font-bold">
@@ -327,7 +359,7 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
         </div>
 
         {/* Body */}
-        <div className="p-8">
+        <div className="p-8 overflow-y-auto flex-1">
           {success ? (
             <div className="flex items-center gap-4 p-4 bg-green-50 border border-green-200 rounded-lg">
               <CheckCircle className="w-6 h-6 text-green-600 flex-shrink-0" />
@@ -357,7 +389,7 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
                   {/* Project Full Name */}
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">
-                      Full Name <span className="text-red-500">*</span>
+                      Project Full Name <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -377,7 +409,7 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
                   {/* Short Name */}
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">
-                      Short Name <span className="text-red-500">*</span>
+                      Project Short Name <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -398,7 +430,7 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
                 {/* Description */}
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">
-                    Description <span className="text-red-500">*</span>
+                    Project Description <span className="text-red-500">*</span>
                   </label>
                   <textarea
                     value={formData.missionProjectDescription || ''}
@@ -423,35 +455,38 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
                 </div>
               </div>
 
-              {/* Category and Type */}
-              <div className="grid grid-cols-2 gap-6">
-                {/* Category */}
+              {/* Programme Type - Full Width and Larger */}
+              <div className="mb-6">
                 <CoreUISearchableSelect
-                  label="Category"
-                  placeholder="Search category..."
-                  options={dropdownOptions.categories.map(cat => ({ 
-                    value: cat.code, 
-                    label: `${cat.name}` 
+                  label="Programme Type*"
+                  placeholder="Search programme type..."
+                  options={dropdownOptions.programmeTypes.map(type => ({ 
+                    value: type.code, 
+                    label: type.display || `${type.code} - ${type.name || ''}`
                   }))}
-                  value={formData.projectCategoryCode || null}
+                  value={formData.programmeTypeCode || null}
                   onChange={(value) => {
-                    handleChange('projectCategoryCode', value || '');
-                    if (errors.projectCategoryCode) {
-                      setErrors(prev => ({ ...prev, projectCategoryCode: '' }));
+                    handleChange('programmeTypeCode', value || '');
+                    if (errors.programmeTypeCode) {
+                      setErrors(prev => ({ ...prev, programmeTypeCode: '' }));
                     }
                   }}
-                  error={errors.projectCategoryCode}
+                  error={errors.programmeTypeCode}
                   required={true}
                   disabled={loading}
+                  isLarge={true}
                 />
+              </div>
 
+              {/* Project Type and Lead Centre - Side by Side */}
+              <div className="grid grid-cols-2 gap-6 mb-6">
                 {/* Project Type */}
                 <CoreUISearchableSelect
-                  label="Project Type"
+                  label="Project Type*"
                   placeholder="Search project type..."
                   options={dropdownOptions.projectTypes.map(type => ({ 
                     value: type.code, 
-                    label: `${type.name}` 
+                    label: type.display || `${type.code} - ${type.name || ''}`
                   }))}
                   value={formData.projectTypesCode || null}
                   onChange={(value) => {
@@ -461,6 +496,26 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
                     }
                   }}
                   error={errors.projectTypesCode}
+                  required={true}
+                  disabled={loading}
+                />
+
+                {/* Lead Centre */}
+                <CoreUISearchableSelect
+                  label="Lead Centre*"
+                  placeholder="Search lead centre..."
+                  options={dropdownOptions.leadCentres.map(lc => ({ 
+                    value: lc.code,
+                    label: lc.display
+                  }))}
+                  value={formData.leadCentreCode || null}
+                  onChange={(value) => {
+                    handleChange('leadCentreCode', value || '');
+                    if (errors.leadCentreCode) {
+                      setErrors(prev => ({ ...prev, leadCentreCode: '' }));
+                    }
+                  }}
+                  error={errors.leadCentreCode}
                   required={true}
                   disabled={loading}
                 />
@@ -476,7 +531,7 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
                 <div className="grid grid-cols-2 gap-6">
                   {/* Budget Code */}
                   <CoreUISearchableSelect
-                    label="Budget Code"
+                    label="Budget Code*"
                     placeholder="Search budget code..."
                     options={dropdownOptions.budgetCodes.map(bc => ({ 
                       value: bc.code,
@@ -494,10 +549,10 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
                     disabled={loading}
                   />
 
-                  {/* Sanctioned Cost */}
+                  {/* Sanction Cost */}
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">
-                      Sanctioned Cost (Lakhs) <span className="text-red-500">*</span>
+                      Sanction Cost (Lakhs) <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
                       <span className="absolute left-4 top-3.5 text-gray-600 font-bold text-lg">₹</span>
@@ -525,9 +580,9 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
                 </div>
 
                 <div className="grid grid-cols-2 gap-6">
-                  {/* Sanctioned Authority */}
+                  {/* Sanctioning Authority */}
                   <CoreUISearchableSelect
-                    label="Sanctioning Authority"
+                    label="Sanctioning Authority*"
                     placeholder="Search sanctioning authority..."
                     options={dropdownOptions.sanctioningAuthorities.map(sa => ({ 
                       value: sa.code, 
@@ -547,11 +602,11 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
 
                   {/* Individual/Combined */}
                   <CoreUISearchableSelect
-                    label="Individual/Combined"
+                    label="Sanction Type*"
                     placeholder="Select option..."
                     options={[
-                      { value: 'I', label: 'Individual Sanction' },
-                      { value: 'C', label: 'Combined Sanction' }
+                      { value: 'Individual', label: 'Individual Sanction' },
+                      { value: 'Combined', label: 'Combined Sanction' }
                     ]}
                     value={formData.individualCombinedSanctionCost || null}
                     onChange={(value) => {
@@ -578,7 +633,7 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
                   {/* Date of Sanction */}
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">
-                      Date of Sanction <span className="text-red-500">*</span>
+                      Date Of Sanction <span className="text-red-500">*</span>
                     </label>
                     <input
                       type="date"
@@ -596,7 +651,7 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
                   {/* Duration in Months */}
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">
-                      Duration (Months)
+                      Duration In Months
                     </label>
                     <input
                       type="number"
@@ -629,144 +684,52 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
               </div>
 
               {/* Project Team */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-gray-900">Project Team</h3>
+              <div className="space-y-6 border-t-2 border-gray-200 pt-6">
+                <h3 className="text-lg font-bold text-gray-900 uppercase tracking-wider flex items-center gap-2">
+                  <div className="w-1 h-6 bg-blue-600 rounded"></div>
+                  Project Team
+                </h3>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-6">
                   {/* Project Director */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Project Director *
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.missionProjectDirector || ''}
-                      onChange={(e) => handleChange('missionProjectDirector', e.target.value)}
-                      placeholder="Enter project director"
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                        errors.missionProjectDirector ? 'border-red-500' : 'border-gray-300'
-                      }`}
-                    />
-                    {errors.missionProjectDirector && (
-                      <p className="text-red-600 text-sm mt-1">{errors.missionProjectDirector}</p>
-                    )}
-                  </div>
+                  <CoreUISearchableSelect
+                    label="Project/Mission Director*"
+                    placeholder="Search project director..."
+                    options={dropdownOptions.employees.map(emp => ({ 
+                      value: emp.code, 
+                      label: emp.display 
+                    }))}
+                    value={formData.missionProjectDirector || null}
+                    onChange={(value) => {
+                      handleChange('missionProjectDirector', value || '');
+                      if (errors.missionProjectDirector) {
+                        setErrors(prev => ({ ...prev, missionProjectDirector: '' }));
+                      }
+                    }}
+                    error={errors.missionProjectDirector}
+                    required={true}
+                    disabled={loading}
+                  />
 
                   {/* Programme Director */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Programme Director *
-                    </label>
-                    <input
-                      type="text"
-                      value={formData.programmeDirector || ''}
-                      onChange={(e) => handleChange('programmeDirector', e.target.value)}
-                      placeholder="Enter programme director"
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                        errors.programmeDirector ? 'border-red-500' : 'border-gray-300'
-                      }`}
-                    />
-                    {errors.programmeDirector && (
-                      <p className="text-red-600 text-sm mt-1">{errors.programmeDirector}</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Status Section */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-gray-900">Current Status</h3>
-
-                <div className="grid grid-cols-2 gap-4">
-                  {/* Current Status */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Status *
-                    </label>
-                    <select
-                      value={formData.currentStatus || ''}
-                      onChange={(e) => handleChange('currentStatus', e.target.value)}
-                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer bg-white ${
-                        errors.currentStatus ? 'border-red-500' : 'border-gray-300'
-                      }`}
-                    >
-                      <option value="">Select Status</option>
-                      {dropdownOptions.statuses.map(status => (
-                        <option key={status.code} value={status.code}>{status.name}</option>
-                      ))}
-                    </select>
-                    {errors.currentStatus && (
-                      <p className="text-red-600 text-sm mt-1">{errors.currentStatus}</p>
-                    )}
-                  </div>
-
-                  {/* Status Percentage */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Status % Complete
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.currentStatusPercentage || ''}
-                      onChange={(e) => handleChange('currentStatusPercentage', e.target.value ? parseInt(e.target.value) : null)}
-                      placeholder="0"
-                      min="0"
-                      max="100"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-
-                {/* Status Remarks */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Status Remarks
-                  </label>
-                  <textarea
-                    value={formData.currentStatusRemarks || ''}
-                    onChange={(e) => handleChange('currentStatusRemarks', e.target.value)}
-                    placeholder="Enter any remarks (max 255 chars)"
-                    maxLength={255}
-                    rows={3}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  <CoreUISearchableSelect
+                    label="Programme/Project Director*"
+                    placeholder="Search programme director..."
+                    options={dropdownOptions.employees.map(emp => ({ 
+                      value: emp.code, 
+                      label: emp.display 
+                    }))}
+                    value={formData.programmeDirector || null}
+                    onChange={(value) => {
+                      handleChange('programmeDirector', value || '');
+                      if (errors.programmeDirector) {
+                        setErrors(prev => ({ ...prev, programmeDirector: '' }));
+                      }
+                    }}
+                    error={errors.programmeDirector}
+                    required={true}
+                    disabled={loading}
                   />
-                </div>
-              </div>
-
-              {/* Optional Expenditure Fields */}
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-gray-900">Expenditure (Optional)</h3>
-
-                <div className="grid grid-cols-2 gap-4">
-                  {/* Cumulative Exp Previous FY */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Cumulative Exp Previous FY
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.cumExpUpToPrevFy || ''}
-                      onChange={(e) => handleChange('cumExpUpToPrevFy', e.target.value ? parseFloat(e.target.value) : null)}
-                      placeholder="0"
-                      step="0.01"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  {/* Current Year Expenditure */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Current Year Expenditure
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.curYrExp || ''}
-                      onChange={(e) => handleChange('curYrExp', e.target.value ? parseFloat(e.target.value) : null)}
-                      placeholder="0"
-                      step="0.01"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                  </div>
                 </div>
               </div>
 

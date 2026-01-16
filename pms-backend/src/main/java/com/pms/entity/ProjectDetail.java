@@ -11,7 +11,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "projectdetails", schema = "bmsmaintables")
+@Table(name = "projectdetails", schema = "pmsmaintables")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -28,22 +28,25 @@ public class ProjectDetail {
     @Column(name = "missionprojectshortname", nullable = false, length = 50)
     private String missionProjectShortName;
     
-    @Column(name = "missionprojectdescription", nullable = false, length = 50)
+    @Column(name = "missionprojectdescription")
     private String missionProjectDescription;
-    
-    @Column(name = "projectcategorycode", nullable = false, length = 5)
-    private String projectCategoryCode;
-    
-    @Column(name = "budgetcode", nullable = false, length = 9)
-    private String budgetCode;
+
+    @Column(name = "programmetypescode", nullable = false, length = 5)
+    private String programmeTypeCode;
     
     @Column(name = "projecttypescode", nullable = false, length = 5)
     private String projectTypesCode;
     
+    @Column(name = "budgetcode", nullable = false, length = 9)
+    private String budgetCode;
+    
+    @Column(name = "leadcentrecode", nullable = false, length = 2)
+    private String leadCentreCode;
+    
     @Column(name = "sanctionedauthority", nullable = false, length = 50)
     private String sanctionedAuthority;
     
-    @Column(name = "individualcombinedsanctioncost", nullable = false, length = 2)
+    @Column(name = "individualcombinedsanctioncost", nullable = false, length = 30)
     private String individualCombinedSanctionCost;
     
     @Column(name = "sanctionedcost", nullable = false, precision = 12, scale = 2)
@@ -115,21 +118,12 @@ public class ProjectDetail {
     @Column(name = "delayremarks", length = 255)
     private String delayRemarks;
     
-    @Column(name = "regstage", length = 5)
-    private String regStage;
-    
     @Column(name = "userid", nullable = false, length = 7)
     private String userId;
     
     @Column(name = "regstatus", nullable = false, length = 1)
     private String regStatus;
     
-    @Column(name = "regtime", columnDefinition = "TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP")
+    @Column(name = "regtime")
     private LocalDateTime regTime;
-    
-    @Column(name = "created_at", insertable = false, updatable = false)
-    private LocalDateTime createdAt;
-    
-    @Column(name = "updated_at", insertable = false, updatable = false)
-    private LocalDateTime updatedAt;
 }

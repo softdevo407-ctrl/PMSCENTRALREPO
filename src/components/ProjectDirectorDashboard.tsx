@@ -11,7 +11,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-import { projectService, ProjectDefinitionResponse } from '../services/projectService';
+import { projectDetailService, ProjectDetailResponse, ProjectDetailRequest } from '../services/projectDetailService';
 import { SAMPLE_PROJECT_SCHEDULING, SAMPLE_REVISION_REQUESTS } from '../pbemData';
 import CoreUIForm from './CoreUIForm';
 import { CategoryStatsCards } from './CategoryStatsCards';
@@ -24,27 +24,29 @@ interface ProjectDirectorDashboardProps {
 const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ userName, onNavigate }) => {
   const { user } = useAuth();
   const [showNewProjectForm, setShowNewProjectForm] = useState(false);
-  const [myProjects, setMyProjects] = useState<ProjectDefinitionResponse[]>([]);
+  const [myProjects, setMyProjects] = useState<ProjectDetailResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Fetch projects on mount and when user changes
   useEffect(() => {
-    if (user?.id) {
+    if (user?.id || user?.employeeCode) {
       fetchProjects();
     }
-  }, [user?.id]);
+  }, [user?.id, user?.employeeCode]);
 
   const fetchProjects = async () => {
     try {
       setLoading(true);
       setError(null);
-      const projects = await projectService.getProjectsByDirector(user!.id);
-      setMyProjects(projects);
+      // Get projects where user is either director or programme director
+      const projects = await projectDetailService.getMyProjects();
+      setMyProjects(projects || []);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch projects';
       setError(errorMessage);
       console.error('Error fetching projects:', err);
+      setMyProjects([]);
     } finally {
       setLoading(false);
     }
@@ -57,9 +59,9 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
 
   const stats = {
     total: myProjects.length,
-    onTrack: myProjects.filter((p) => p.status === 'ON_TRACK').length,
-    atRisk: myProjects.filter((p) => p.status === 'AT_RISK').length,
-    delayed: myProjects.filter((p) => p.status === 'DELAYED').length,
+    onTrack: myProjects.filter((p) => p.missionProjectCode?.toLowerCase().includes('ontrack')).length,
+    atRisk: myProjects.filter((p) => p.missionProjectCode?.toLowerCase().includes('atrisk')).length,
+    delayed: myProjects.filter((p) => p.missionProjectCode?.toLowerCase().includes('delayed')).length,
     pendingRevisions: myRevisions.filter((r) => r.status === 'PENDING').length,
   };
 
@@ -70,18 +72,21 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
       // Parse sanctioned amount to number
       const sanctionedAmount = parseFloat(data.sanctionedAmount) || 0;
       
-      const projectData = {
-        projectName: data.projectName,
-        shortName: data.shortName,
-        programmeName: data.programmeName,
-        category: data.category,
+      const projectData: ProjectDetailRequest = {
+        missionProjectFullName: data.projectName,
+        missionProjectShortName: data.shortName,
         budgetCode: data.budgetCode,
-        leadCentre: data.leadCentre,
-        sanctionedAmount: sanctionedAmount * 1000000, // Convert to actual amount
-        endDate: data.endDate,
+        projectTypesCode: 'DEFAULT', // Default project type
+        sanctionedAuthority: 'Not Specified',
+        individualCombinedSanctionCost: sanctionedAmount.toString(),
+        sanctionedCost: sanctionedAmount * 1000000, // Convert to actual amount
+        dateOffs: new Date().toISOString().split('T')[0],
+        originalSchedule: data.endDate,
+        missionProjectDirector: user?.employeeCode || '',
+        programmeDirector: user?.employeeCode || '',
       };
 
-      await projectService.createProject(projectData, user?.token);
+      await projectDetailService.createProjectDetail(projectData);
       
       setShowNewProjectForm(false);
       alert('Project created successfully!');
@@ -128,7 +133,7 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
       </div>
 
       {/* Category-wise Stats Cards */}
-      <CategoryStatsCards onNavigate={onNavigate} />
+      <CategoryStatsCards onNavigate={onNavigate} employeeCode={user?.employeeCode} />
 
       {/* Statistics Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
@@ -231,41 +236,33 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {myProjects.map((project) => {
-                  const scheduling = mySchedulings.find((s) => s.projectDefinitionId === project.id);
-                  const statusColor =
-                    project.status === 'ON_TRACK'
-                      ? 'bg-emerald-100 text-emerald-800'
-                      : project.status === 'AT_RISK'
-                      ? 'bg-orange-100 text-orange-800'
-                      : 'bg-red-100 text-red-800';
-
                   return (
-                    <tr key={project.id} className="hover:bg-gray-50 transition-colors">
+                    <tr key={project.missionProjectCode} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4">
-                        <p className="font-semibold text-gray-900">{project.projectName}</p>
-                        <p className="text-sm text-gray-500">{project.shortName}</p>
+                        <p className="font-semibold text-gray-900">{project.missionProjectFullName}</p>
+                        <p className="text-sm text-gray-500">{project.missionProjectShortName}</p>
                       </td>
                       <td className="px-6 py-4">
-                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${statusColor}`}>
-                          {project.status.replace('_', ' ')}
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800`}>
+                          {project.regStatus === 'R' ? 'Active' : 'Inactive'}
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <p className="font-semibold text-gray-900">₹{(project.sanctionedAmount / 1000000).toFixed(1)}M</p>
+                        <p className="font-semibold text-gray-900">₹{(project.sanctionedCost / 1000000).toFixed(1)}M</p>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
                           <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
                             <div
                               className="h-full bg-gradient-to-r from-blue-500 to-blue-600"
-                              style={{ width: `${scheduling?.overallCompletionPercentage || 0}%` }}
+                              style={{ width: `${50}%` }}
                             />
                           </div>
-                          <span className="text-sm font-semibold text-gray-900">{scheduling?.overallCompletionPercentage || 0}%</span>
+                          <span className="text-sm font-semibold text-gray-900">{50}%</span>
                         </div>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600">
-                        {new Date(project.revisedEndDate || project.endDate).toLocaleDateString('en-IN')}
+                        {new Date(project.originalSchedule).toLocaleDateString('en-IN')}
                       </td>
                       <td className="px-6 py-4">
                         <button

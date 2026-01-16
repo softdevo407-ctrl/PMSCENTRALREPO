@@ -20,6 +20,9 @@ public interface ProjectDetailRepository extends JpaRepository<ProjectDetail, St
     @Query("SELECT p FROM ProjectDetail p WHERE p.programmeDirector = ?1 ORDER BY p.missionProjectCode DESC")
     List<ProjectDetail> findByProgrammeDirector(String programmeDirectorId);
     
+    @Query("SELECT p FROM ProjectDetail p WHERE p.missionProjectDirector = ?1 OR p.programmeDirector = ?2 ORDER BY p.missionProjectCode DESC")
+    List<ProjectDetail> findByMissionProjectDirectorOrProgrammeDirector(String directorId, String programmeDirectorId);
+    
     @Query("SELECT p FROM ProjectDetail p ORDER BY p.missionProjectCode DESC")
     List<ProjectDetail> findAllOrderByCodeDesc();
     

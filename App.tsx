@@ -28,6 +28,7 @@ import { ReportsPage } from './src/components/pages/ReportsPage';
 import { RoleManagementPage } from './src/components/pages/RoleManagementPage';
 import { ProgrammeOfficeManagementPage } from './src/components/pages/ProgrammeOfficeManagementPage';
 import { ProgrammeTypeManagementPage } from './src/components/pages/ProgrammeTypeManagementPage';
+import { ProjectTypeManagementPage } from './src/components/pages/ProjectTypeManagementPage';
 import { ProjectActivityManagementPage } from './src/components/pages/ProjectActivityManagementPage';
 import { ProjectCategoryManagementPage } from './src/components/pages/ProjectCategoryManagementPage';
 import { ProjectMilestoneManagementPage } from './src/components/ProjectMilestoneManagementPage';
@@ -35,6 +36,8 @@ import { ProjectPhaseGenericManagementPage } from './src/components/ProjectPhase
 import { BudgetCentreProjectCodeManagementPage } from './src/components/pages/BudgetCentreProjectCodeManagementPage';
 import ProjectDefinitionPage from './src/components/pages/ProjectDefinitionPage';
 import { SanctioningAuthorityManagementPage } from './src/components/pages/SanctioningAuthorityManagementPage';
+import { EmployeeDetailsManagementPage } from './src/components/pages/EmployeeDetailsManagementPage';
+import { ProjectStatusCodeManagementPage } from './src/components/pages/ProjectStatusCodeManagementPage';
 import { 
   ArrowLeft, 
   Plus, 
@@ -262,6 +265,9 @@ const App: React.FC = () => {
         {currentPage === 'programme-types' && userRole === 'Admin' && (
           <ProgrammeTypeManagementPage userName={currentUserName} />
         )}
+        {currentPage === 'project-types' && userRole === 'Admin' && (
+          <ProjectTypeManagementPage userName={currentUserName} />
+        )}
         {currentPage === 'project-activities' && userRole === 'Admin' && (
           <ProjectActivityManagementPage userName={currentUserName} />
         )}
@@ -279,6 +285,12 @@ const App: React.FC = () => {
         )}
         {currentPage === 'sanctioning-authorities' && userRole === 'Admin' && (
           <SanctioningAuthorityManagementPage userName={currentUserName} />
+        )}
+        {currentPage === 'employee-details' && userRole === 'Admin' && (
+          <EmployeeDetailsManagementPage userName={currentUserName} />
+        )}
+        {currentPage === 'project-status-codes' && userRole === 'Admin' && (
+          <ProjectStatusCodeManagementPage userName={currentUserName} />
         )}
         {currentPage === 'project-definition' && userRole === 'Admin' && (
           <ProjectDefinitionPage />

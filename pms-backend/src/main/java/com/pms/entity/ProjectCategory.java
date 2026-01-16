@@ -4,17 +4,17 @@ import jakarta.persistence.*;
 import java.time.LocalDate;
 
 @Entity
-@Table(name = "projectcategories", schema = "pmsgeneric")
+@Table(name = "projectcategory", schema = "pmsgeneric")
 public class ProjectCategory {
     
     @Id
-    @Column(name = "projectcategoriescode", length = 5)
+    @Column(name = "projectcategorycode", length = 5)
     private String projectCategoryCode;
     
-    @Column(name = "projectcategoriesfullname", length = 255, nullable = false)
+    @Column(name = "projectcategoryfullname", length = 255, nullable = false)
     private String projectCategoryFullName;
     
-    @Column(name = "projectcategoriesshortname", length = 50, nullable = false)
+    @Column(name = "projectcategoryshortname", length = 50, nullable = false)
     private String projectCategoryShortName;
     
     @Column(name = "showondashboard", length = 3, nullable = false)

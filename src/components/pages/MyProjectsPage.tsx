@@ -1,7 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Eye, TrendingUp, AlertCircle, CheckCircle2, DollarSign, Calendar, Plus, Filter, Loader2, Edit, Zap, X } from 'lucide-react';
+import { Eye, TrendingUp, AlertCircle, CheckCircle2, DollarSign, Calendar, Plus, Filter, Loader2, Edit, Zap, X, Code, Layers, TrendingDown, Clock } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { projectDetailService, ProjectDetailResponse } from '../../services/projectDetailService';
+import { projectStatusCodeService } from '../../services/projectStatusCodeService';
+import { projectTypeService } from '../../services/projectTypeService';
+import { ProgrammeTypeService } from '../../services/programmeTypeService';
+import { ProjectCategoryService } from '../../services/projectCategoryService';
 import { AddPhaseModal } from '../AddPhaseModal';
 import { ProjectPhasesPanel } from '../ProjectPhasesPanel';
 import { AddProjectDefinitionModal } from '../AddProjectDefinitionModal';
@@ -9,12 +13,27 @@ import { StatusUpdationModal } from '../StatusUpdationModal';
 
 interface MyProjectsPageProps {
   userName: string;
+  selectedCategory?: string;
 }
 
-export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName }) => {
+interface StatusMap {
+  [key: string]: string;
+}
+
+interface TypeMap {
+  [key: string]: string;
+}
+
+interface CategoryMap {
+  [key: string]: string;
+}
+
+export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, selectedCategory }) => {
   const { user } = useAuth();
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterType, setFilterType] = useState<string>('all');
+  const [filterCategory, setFilterCategory] = useState<string>(selectedCategory || 'all');
   const [myProjects, setMyProjects] = useState<ProjectDetailResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -24,6 +43,9 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName }) => {
   const [phasesRefreshKey, setPhasesRefreshKey] = useState(0);
   const [editingPhaseId, setEditingPhaseId] = useState<number | null>(null);
   const [editingProjectCode, setEditingProjectCode] = useState<string | null>(null);
+  const [statusMap, setStatusMap] = useState<StatusMap>({});
+  const [typeMap, setTypeMap] = useState<TypeMap>({});
+  const [categoryMap, setCategoryMap] = useState<CategoryMap>({});
 
   // Fetch projects for current user
   useEffect(() => {
@@ -32,9 +54,43 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName }) => {
         setLoading(true);
         setError(null);
         
-        // Fetch all project definitions from new service
-        const projectDefinitions = await projectDetailService.getAllProjectDetails();
-        setMyProjects(projectDefinitions || []);
+        // Fetch projects where current user is project director or programme director
+        const myProjectsData = await projectDetailService.getMyProjects();
+        setMyProjects(myProjectsData || []);
+        
+        // Fetch all status codes and build map
+        const allStatusCodes = await projectStatusCodeService.getAllProjectStatusCodes();
+        const newStatusMap: StatusMap = {};
+        allStatusCodes.forEach(status => {
+          newStatusMap[status.projectStatusCode] = status.projectStatusFullName;
+        });
+        setStatusMap(newStatusMap);
+        
+        // Fetch all project types and build map
+        const allProjectTypes = await projectTypeService.getAllProjectTypes();
+        const newTypeMap: TypeMap = {};
+        allProjectTypes.forEach(type => {
+          newTypeMap[type.projectTypesCode] = type.projectTypesFullName;
+        });
+        setTypeMap(newTypeMap);
+        
+        // Fetch all programme types to get category codes, then fetch categories
+        const allProgrammeTypes = await ProgrammeTypeService.getAllProgrammeTypes();
+        const newCategoryMap: CategoryMap = {};
+        
+        // Get unique category codes from programme types
+        const uniqueCategoryCodes = Array.from(new Set(allProgrammeTypes.map(pt => pt.projectCategoryCode)));
+        
+        // Fetch each category and build map
+        for (const categoryCode of uniqueCategoryCodes) {
+          try {
+            const category = await ProjectCategoryService.getProjectCategoryByCode(categoryCode);
+            newCategoryMap[categoryCode] = category.projectCategoryFullName;
+          } catch (err) {
+            console.error(`Failed to fetch category ${categoryCode}:`, err);
+          }
+        }
+        setCategoryMap(newCategoryMap);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Failed to fetch projects';
         setError(errorMsg);
@@ -46,9 +102,12 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName }) => {
     fetchProjects();
   }, [user?.id]);
 
-  const filteredProjects = filterStatus === 'all' 
-    ? myProjects 
-    : myProjects.filter(p => p.currentStatus === filterStatus);
+  const filteredProjects = myProjects.filter(p => {
+    const matchStatus = filterStatus === 'all' || p.currentStatus === filterStatus;
+    const matchType = filterType === 'all' || p.projectTypesCode === filterType;
+    const matchCategory = filterCategory === 'all' || p.projectCategoryCode === filterCategory;
+    return matchStatus && matchType && matchCategory;
+  });
 
   const totalBudget = myProjects.reduce((sum, p) => {
     return sum + (p.sanctionedCost || 0);
@@ -158,20 +217,42 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName }) => {
         {/* Projects List */}
         <div className="lg:col-span-2">
           {/* Filters */}
-          <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4 flex items-center gap-3">
-            <Filter className="w-5 h-5 text-gray-500" />
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="all">All Projects</option>
-              <option value="ON_TRACK">On Track</option>
-              <option value="AT_RISK">At Risk</option>
-              <option value="DELAYED">Delayed</option>
-              <option value="COMPLETED">Completed</option>
-              <option value="ON_HOLD">On Hold</option>
-            </select>
+          <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4 space-y-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              <Filter className="w-5 h-5 text-gray-500" />
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="all">All Status</option>
+                <option value="ON_TRACK">On Track</option>
+                <option value="AT_RISK">At Risk</option>
+                <option value="DELAYED">Delayed</option>
+                <option value="COMPLETED">Completed</option>
+                <option value="ON_HOLD">On Hold</option>
+              </select>
+              <select
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="all">All Programme Types</option>
+                {Array.from(new Set(myProjects.map(p => p.projectTypesCode))).map(type => (
+                  <option key={type} value={type}>{typeMap[type] || type}</option>
+                ))}
+              </select>
+              <select
+                value={filterCategory}
+                onChange={(e) => setFilterCategory(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="all">All Categories</option>
+                {Array.from(new Set(myProjects.map(p => p.projectCategoryCode))).map(category => (
+                  <option key={category} value={category}>{categoryMap[category] || category}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* Projects Grid */}
@@ -188,27 +269,52 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName }) => {
               >
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <h3 className="text-lg font-bold text-gray-900">{project.missionProjectFullName}</h3>
-                    <p className="text-sm text-gray-600 mt-1">{project.missionProjectShortName} • {project.projectCategoryCode}</p>
+                    <h3 className="text-lg font-bold text-gray-900">{project.budgetCode} - {project.missionProjectFullName}</h3>
+                    <p className="text-sm text-gray-600 mt-1">{typeMap[project.projectTypesCode] || project.projectTypesCode}</p>
                   </div>
                   <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(project.currentStatus)}`}>
-                    {getStatusLabel(project.currentStatus)}
+                    {statusMap[project.currentStatus] || getStatusLabel(project.currentStatus)}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-3 gap-4 mb-4">
                   <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Budget (Sanctioned Cost)</p>
-                    <p className="text-lg font-bold text-gray-900 mt-1">₹{((project.sanctionedCost || 0) / 100000).toFixed(2)}L</p>
-                    <p className="text-xs text-gray-400 mt-1">{((project.sanctionedCost || 0) / 10000000).toFixed(1)} Cr</p>
+                    <div className="flex items-center gap-1 mb-1">
+                      <DollarSign className="w-4 h-4 text-blue-600" />
+                      <p className="text-xs text-gray-500 titlecase tracking-wide">Sanctioned Cost</p>
+                    </div>
+                    <p className="text-lg font-bold text-gray-900">₹{project.sanctionedCost}L</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Category</p>
-                    <p className="text-sm font-bold text-gray-900 mt-1">{project.projectCategoryCode}</p>
+                    <div className="flex items-center gap-1 mb-1">
+                      <TrendingDown className="w-4 h-4 text-green-600" />
+                      <p className="text-xs text-gray-500 titlecase tracking-wide">Expenditure Till Date</p>
+                    </div>
+                    <p className="text-lg font-bold text-green-600">₹{project.cumExpUpToPrevFy}L</p>
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide">Schedule</p>
-                    <p className="text-lg font-bold text-gray-900 mt-1">{project.originalSchedule ? new Date(project.originalSchedule).toLocaleDateString() : '-'}</p>
+                    <div className="flex items-center gap-1 mb-1">
+                      <TrendingUp className="w-4 h-4 text-orange-600" />
+                      <p className="text-xs text-gray-500 titlecase tracking-wide">Current Year Exp</p>
+                    </div>
+                    <p className="text-lg font-bold text-orange-600">₹0L</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <div className="flex items-center gap-1 mb-1">
+                      <Calendar className="w-4 h-4 text-purple-600" />
+                      <p className="text-xs text-gray-500 titlecase tracking-wide">Sanctioned Date</p>
+                    </div>
+                    <p className="text-sm font-bold text-gray-900">{project.dateOffs ? new Date(project.dateOffs).toLocaleDateString() : '-'}</p>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1 mb-1">
+                      <Clock className="w-4 h-4 text-orange-600" />
+                      <p className="text-xs text-gray-500 titlecase tracking-wide">Schedule</p>
+                    </div>
+                    <p className="text-sm font-bold text-gray-900">{project.originalSchedule ? new Date(project.originalSchedule).toLocaleDateString() : '-'}</p>
                   </div>
                 </div>
 
@@ -270,11 +376,11 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName }) => {
                   </div>
                   <div>
                     <p className="text-gray-600">Category</p>
-                    <p className="font-semibold text-gray-900">{selectedProjectData.projectCategoryCode}</p>
+                    <p className="font-semibold text-gray-900">{categoryMap[selectedProjectData.projectCategoryCode] || selectedProjectData.projectCategoryCode}</p>
                   </div>
                   <div className="pt-3 border-t border-gray-200">
                     <p className="text-gray-600">Sanctioned Cost</p>
-                    <p className="text-xl font-bold text-blue-600">₹{((selectedProjectData.sanctionedCost || 0) / 10000000).toFixed(1)}Cr</p>
+                    <p className="text-xl font-bold text-blue-600">₹{selectedProjectData.sanctionedCost}L</p>
                   </div>
                   <div>
                     <p className="text-gray-600">Status</p>

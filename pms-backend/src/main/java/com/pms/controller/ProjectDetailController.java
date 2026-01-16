@@ -57,6 +57,28 @@ public class ProjectDetailController {
         return ResponseEntity.ok(projects);
     }
     
+    @GetMapping("/my-projects")
+    public ResponseEntity<List<ProjectDetailResponse>> getMyProjects(Authentication authentication) {
+        String employeeCode = authentication != null ? authentication.getName() : "";
+        log.info("Fetching projects for user: {} (as project or programme director)", employeeCode);
+        List<ProjectDetailResponse> projects = projectDetailService.getProjectDetailsByDirectorOrProgrammeDirector(employeeCode);
+        return ResponseEntity.ok(projects);
+    }
+    
+    @GetMapping("/category-stats")
+    @PermitAll
+    public ResponseEntity<?> getCategoryStats() {
+        log.info("Fetching category statistics");
+        return ResponseEntity.ok(projectDetailService.getCategoryStats());
+    }
+    
+    @GetMapping("/category-stats-by-director/{employeeCode}")
+    @PermitAll
+    public ResponseEntity<?> getCategoryStatsByDirector(@PathVariable String employeeCode) {
+        log.info("Fetching category statistics for director: {}", employeeCode);
+        return ResponseEntity.ok(projectDetailService.getCategoryStatsByDirector(employeeCode));
+    }
+    
     @GetMapping("/{code}")
     @PermitAll
     public ResponseEntity<ProjectDetailResponse> getProjectDetailByCode(@PathVariable String code) {

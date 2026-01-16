@@ -157,6 +157,12 @@ const CoreUISidebar: React.FC<CoreUISidebarProps> = ({
               onClick: () => onNavigate('programme-types'),
             },
             {
+              id: 'project-types',
+              label: 'Project Types',
+              icon: <Users className="w-5 h-5" />,
+              onClick: () => onNavigate('project-types'),
+            },
+            {
               id: 'project-activities',
               label: 'Project Activities',
               icon: <Users className="w-5 h-5" />,
@@ -188,9 +194,21 @@ const CoreUISidebar: React.FC<CoreUISidebarProps> = ({
             },
             {
               id: 'sanctioning-authorities',
-              label: 'Sanctioning Authorities',
+              label: 'Sanctioning Auth',
               icon: <Users className="w-5 h-5" />,
               onClick: () => onNavigate('sanctioning-authorities'),
+            },
+            {
+              id: 'employee-details',
+              label: 'Employee Details',
+              icon: <Users className="w-5 h-5" />,
+              onClick: () => onNavigate('employee-details'),
+            },
+            {
+              id: 'project-status-codes',
+              label: 'Project StatCodes',
+              icon: <CheckSquare className="w-5 h-5" />,
+              onClick: () => onNavigate('project-status-codes'),
             },
             {
               id: 'project-definition',

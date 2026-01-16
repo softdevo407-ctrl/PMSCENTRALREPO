@@ -28,11 +28,36 @@ export interface ProgrammeTypeRequest {
 const BASE_URL = 'http://localhost:7080/api';
 
 export class ProgrammeTypeService {
+  private static getHeaders(): Record<string, string> {
+    const authHeaders = authService.getAuthHeader();
+    return {
+      "Content-Type": "application/json",
+      ...authHeaders
+    };
+  }
+
   static async getAllProgrammeTypes(): Promise<ProgrammeType[]> {
     try {
-      const response = await fetch(`${BASE_URL}/programme-types`);
-      if (!response.ok) throw new Error('Failed to fetch programme types');
-      return await response.json();
+      const headers = this.getHeaders();
+      console.log('Fetching programme types from:', `${BASE_URL}/programme-types`);
+      console.log('With headers:', headers);
+      
+      const response = await fetch(`${BASE_URL}/programme-types`, {
+        method: 'GET',
+        headers: headers
+      });
+      
+      console.log('Response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error response body:', errorText);
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      console.log('Successfully fetched programme types:', data);
+      return data;
     } catch (error) {
       console.error('Error fetching programme types:', error);
       throw error;
@@ -41,7 +66,10 @@ export class ProgrammeTypeService {
 
   static async getProgrammeTypeByCode(code: string): Promise<ProgrammeType> {
     try {
-      const response = await fetch(`${BASE_URL}/programme-types/${code}`);
+      const response = await fetch(`${BASE_URL}/programme-types/${code}`, {
+        method: 'GET',
+        headers: this.getHeaders()
+      });
       if (!response.ok) throw new Error('Failed to fetch programme type');
       return await response.json();
     } catch (error) {

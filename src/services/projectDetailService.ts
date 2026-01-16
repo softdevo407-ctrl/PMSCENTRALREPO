@@ -5,10 +5,11 @@ const API_BASE_URL = "http://localhost:7080/api";
 export interface ProjectDetailRequest {
   missionProjectFullName: string;
   missionProjectShortName: string;
-  missionProjectDescription: string;
-  projectCategoryCode: string;
+  missionProjectDescription?: string;
   budgetCode: string;
+  programmeTypeCode: string;
   projectTypesCode: string;
+  leadCentreCode: string;
   sanctionedAuthority: string;
   individualCombinedSanctionCost: string;
   sanctionedCost: number;
@@ -18,18 +19,20 @@ export interface ProjectDetailRequest {
   fsCopy?: string | null;
   missionProjectDirector: string;
   programmeDirector: string;
-  cumExpUpToPrevFy?: number | null;
-  curYrExp?: number | null;
-  currentStatusPercentage?: number | null;
-  currentStatus: string;
-  currentStatusRemarks?: string | null;
 }
 
 export interface ProjectDetailResponse extends ProjectDetailRequest {
   missionProjectCode: string;
   userId: string;
   regStatus: string;
-  regStage: string;
+  regTime?: string;
+  cumExpUpToPrevFy?: number;
+  curYrExp?: number;
+  cumulativeExpenditureToDate?: number;
+  currentStatusPercentage?: number;
+  currentStatus?: string;
+  currentStatusRemarks?: string;
+  projectCategoryCode?: string;
 }
 
 class ProjectDetailService {
@@ -76,6 +79,25 @@ class ProjectDetailService {
       return await response.json();
     } catch (error) {
       console.error("Error fetching active project details:", error);
+      throw error;
+    }
+  }
+
+  async getMyProjects(): Promise<ProjectDetailResponse[]> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/project-details/my-projects`, {
+        method: "GET",
+        headers: this.getHeaders(),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP ${response.status}: Failed to fetch your projects`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error("Error fetching your projects:", error);
       throw error;
     }
   }

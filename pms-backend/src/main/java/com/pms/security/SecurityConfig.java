@@ -93,6 +93,7 @@ public class SecurityConfig {
                         .requestMatchers("/project-categories/**").permitAll()
                         .requestMatchers("/project-milestones/**").permitAll()
                         .requestMatchers("/project-phases-generic/**").permitAll()
+                        .requestMatchers("/project-status-codes/**").permitAll()
                         .requestMatchers("/sanctioning-authorities/**").permitAll()
                         .requestMatchers("/employee-details/**").permitAll()
                         .requestMatchers("/actuator/**").permitAll()

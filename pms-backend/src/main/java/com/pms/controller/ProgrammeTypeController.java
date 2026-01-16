@@ -12,6 +12,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/programme-types")
+@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:3000"}, allowCredentials = "true")
 public class ProgrammeTypeController {
     
     @Autowired

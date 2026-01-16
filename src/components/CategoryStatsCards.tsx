@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, AlertCircle, CheckCircle, AlertTriangle, Award } from 'lucide-react';
+import { TrendingUp, AlertCircle, CheckCircle, AlertTriangle, Award, Loader2 } from 'lucide-react';
 import { projectService } from '../services/projectService';
+import { ProjectCategoryService } from '../services/projectCategoryService';
+import { categoryStatsService } from '../services/categoryStatsService';
 
 interface CategoryStat {
   category: string;
@@ -11,66 +13,128 @@ interface CategoryStat {
   completed: number;
 }
 
-interface CategoryStatsCardsProps {
-  onNavigate?: (page: string, category?: string) => void;
+interface CategoryInfo {
+  code: string;
+  fullName: string;
 }
 
-export const CategoryStatsCards: React.FC<CategoryStatsCardsProps> = ({ onNavigate }) => {
+interface CategoryStatsCardsProps {
+  onNavigate?: (page: string, category?: string) => void;
+  employeeCode?: string; // For director-specific stats
+}
+
+// Color palette for categories (rotates through colors)
+const CATEGORY_COLORS = [
+  'from-blue-500 to-blue-600',
+  'from-purple-500 to-purple-600',
+  'from-green-500 to-green-600',
+  'from-orange-500 to-orange-600',
+  'from-pink-500 to-pink-600',
+  'from-indigo-500 to-indigo-600',
+  'from-cyan-500 to-cyan-600',
+  'from-teal-500 to-teal-600',
+  'from-rose-500 to-rose-600',
+  'from-amber-500 to-amber-600'
+];
+
+// Icon options for categories (rotates through icons)
+const CATEGORY_ICONS = [
+  <TrendingUp className="w-6 h-6" key="trending" />,
+  <Award className="w-6 h-6" key="award" />,
+  <AlertCircle className="w-6 h-6" key="alert" />,
+  <CheckCircle className="w-6 h-6" key="check" />,
+  <AlertTriangle className="w-6 h-6" key="warning" />,
+  <Loader2 className="w-6 h-6" key="loader" />
+];
+
+export const CategoryStatsCards: React.FC<CategoryStatsCardsProps> = ({ onNavigate, employeeCode }) => {
   const [stats, setStats] = useState<CategoryStat[]>([]);
+  const [categories, setCategories] = useState<Map<string, CategoryInfo>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchCategoryStats();
-  }, []);
+    fetchData();
+  }, [employeeCode]);
 
-  const fetchCategoryStats = async () => {
+  const fetchData = async () => {
     try {
       setLoading(true);
-      const data = await projectService.getCategoryStats();
-      setStats(data);
       setError(null);
+      
+      // Fetch all categories
+      const allCategories = await ProjectCategoryService.getAllProjectCategories();
+      console.log('All Categories:', allCategories);
+      const categoryMap = new Map<string, CategoryInfo>();
+      allCategories.forEach((cat) => {
+        categoryMap.set(cat.projectCategoryCode, {
+          code: cat.projectCategoryCode,
+          fullName: cat.projectCategoryFullName
+        });
+      });
+      setCategories(categoryMap);
+      
+      // Fetch stats - use director-specific if employeeCode provided, otherwise global
+      let data;
+      if (employeeCode) {
+        console.log('Fetching category stats for employee code:', employeeCode);
+        data = await categoryStatsService.getCategoryStatsByDirector(employeeCode);
+        console.log('Category Stats by Director (raw):', data);
+      } else {
+        data = await projectService.getCategoryStats();
+        console.log('Category Stats (Global):', data);
+      }
+      
+      // Merge all categories with their stats (even if no stats exist)
+      const mergedStats: CategoryStat[] = allCategories.map((cat) => {
+        const statData = data?.find((stat: any) => {
+          console.log('Comparing stat:', stat.projectCategoryCode, 'with category:', cat.projectCategoryCode);
+          return stat.projectCategoryCode === cat.projectCategoryCode;
+        });
+        console.log('Found stat for category', cat.projectCategoryCode, ':', statData);
+        return {
+          category: cat.projectCategoryCode,
+          total: statData?.projectCount || 0,
+          onTrack: statData?.onTrack || 0,
+          atRisk: statData?.atRisk || 0,
+          delayed: statData?.delayed || 0,
+          completed: statData?.completed || 0
+        };
+      });
+      console.log('Merged stats:', mergedStats);
+      setStats(mergedStats);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error loading stats');
+      const errorMsg = err instanceof Error ? err.message : 'Error loading stats';
+      setError(errorMsg);
       console.error('Error fetching category stats:', err);
+      setStats([]);
     } finally {
       setLoading(false);
     }
   };
 
-  const getCategoryColor = (category: string): string => {
-    const colors: { [key: string]: string } = {
-      'Launch Vehicles': 'from-blue-500 to-blue-600',
-      'Space Crafts': 'from-purple-500 to-purple-600',
-      'Infrastructure': 'from-green-500 to-green-600',
-      'Advanced R&D': 'from-orange-500 to-orange-600',
-      'User Funded Projects': 'from-pink-500 to-pink-600'
-    };
-    return colors[category] || 'from-gray-500 to-gray-600';
+  const getCategoryColor = (categoryCode: string, index: number): string => {
+    return CATEGORY_COLORS[index % CATEGORY_COLORS.length];
   };
 
-  const getCategoryIcon = (category: string) => {
-    const icons: { [key: string]: React.ReactNode } = {
-      'Launch Vehicles': <TrendingUp className="w-6 h-6" />,
-      'Space Crafts': <Award className="w-6 h-6" />,
-      'Infrastructure': <AlertCircle className="w-6 h-6" />,
-      'Advanced R&D': <CheckCircle className="w-6 h-6" />,
-      'User Funded Projects': <AlertTriangle className="w-6 h-6" />
-    };
-    return icons[category] || <TrendingUp className="w-6 h-6" />;
+  const getCategoryIcon = (categoryCode: string, index: number) => {
+    return CATEGORY_ICONS[index % CATEGORY_ICONS.length];
   };
 
-  const getStatusPercentage = (stat: CategoryStat, status: 'onTrack' | 'atRisk' | 'offTrack' | 'completed'): number => {
+  const getCategoryFullName = (categoryCode: string): string => {
+    return categories.get(categoryCode)?.fullName || categoryCode;
+  };
+
+  const getStatusPercentage = (stat: CategoryStat, status: 'onTrack' | 'atRisk' | 'delayed' | 'completed'): number => {
     if (stat.total === 0) return 0;
     return Math.round((stat[status] / stat.total) * 100);
   };
 
   if (loading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        {[1, 2, 3, 4, 5].map((i) => (
-          <div key={i} className="bg-gray-200 rounded-lg h-64 animate-pulse" />
-        ))}
+      <div className="flex items-center justify-center py-8 gap-2">
+        <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+        <p className="text-gray-600">Loading categories...</p>
       </div>
     );
   }
@@ -78,31 +142,38 @@ export const CategoryStatsCards: React.FC<CategoryStatsCardsProps> = ({ onNaviga
   if (error) {
     return (
       <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3">
-        <AlertCircle className="w-5 h-5 text-red-600" />
+        <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
         <div>
-          <h3 className="text-sm font-medium text-red-800">Error</h3>
+          <h3 className="text-sm font-medium text-red-800">Error loading categories</h3>
           <p className="text-sm text-red-700">{error}</p>
         </div>
       </div>
     );
   }
 
+  if (stats.length === 0) {
+    return (
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center gap-3">
+        <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0" />
+        <p className="text-blue-700">No categories configured yet.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
-     
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        {stats.map((stat) => (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        {stats.map((stat, index) => (
           <div
             key={stat.category}
-            onClick={() => onNavigate?.('my-projects', stat.category)}
-            className={`bg-gradient-to-br ${getCategoryColor(stat.category)} rounded-lg shadow-lg overflow-hidden text-white hover:shadow-xl transition-all cursor-pointer hover:scale-105`}
+            onClick={() => stat.total > 0 && onNavigate?.('my-projects', stat.category)}
+            className={`bg-gradient-to-br ${getCategoryColor(stat.category, index)} rounded-lg shadow-lg overflow-hidden text-white hover:shadow-xl transition-all ${stat.total > 0 ? 'cursor-pointer hover:scale-105' : 'opacity-75 cursor-default'}`}
           >
             {/* Header */}
             <div className="p-4 bg-black bg-opacity-10">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold truncate">{stat.category}</h3>
-                <div className="opacity-70">{getCategoryIcon(stat.category)}</div>
+                <h3 className="text-sm font-bold truncate">{getCategoryFullName(stat.category)}</h3>
+                <div className="opacity-70">{getCategoryIcon(stat.category, index)}</div>
               </div>
             </div>
 
@@ -110,92 +181,43 @@ export const CategoryStatsCards: React.FC<CategoryStatsCardsProps> = ({ onNaviga
             <div className="p-4">
               <div className="mb-4">
                 <p className="text-3xl font-bold">{stat.total}</p>
-                <p className="text-sm opacity-90">Total Projects</p>
+                <p className="text-sm opacity-90">{stat.total === 1 ? 'Project' : 'Total Projects'}</p>
               </div>
 
               {/* Status Breakdown */}
-              <div className="space-y-3 text-xs">
+              <div className="space-y-2 text-xs">
                 {/* On Track */}
-                {stat.onTrack > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
-                        <CheckCircle className="w-4 h-4" />
-                        <span>On Track</span>
-                      </div>
-                      <span className="font-bold">{stat.onTrack} ({getStatusPercentage(stat, 'onTrack')}%)</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-white bg-opacity-20 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-green-300 rounded-full" 
-                        style={{ width: `${getStatusPercentage(stat, 'onTrack')}%` }} 
-                      />
-                    </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span>On Track</span>
+                    <span className="font-bold">{stat.onTrack || 0}</span>
                   </div>
-                )}
+                </div>
 
                 {/* At Risk */}
-                {stat.atRisk > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4" />
-                        <span>At Risk</span>
-                      </div>
-                      <span className="font-bold">{stat.atRisk} ({getStatusPercentage(stat, 'atRisk')}%)</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-white bg-opacity-20 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-yellow-300 rounded-full" 
-                        style={{ width: `${getStatusPercentage(stat, 'atRisk')}%` }} 
-                      />
-                    </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span>At Risk</span>
+                    <span className="font-bold">{stat.atRisk || 0}</span>
                   </div>
-                )}
+                </div>
 
                 {/* Delayed */}
-                {stat.delayed > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
-                        <AlertCircle className="w-4 h-4" />
-                        <span>Delayed</span>
-                      </div>
-                      <span className="font-bold">{stat.delayed} ({getStatusPercentage(stat, 'delayed')}%)</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-white bg-opacity-20 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-red-300 rounded-full" 
-                        style={{ width: `${getStatusPercentage(stat, 'delayed')}%` }} 
-                      />
-                    </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span>Delayed</span>
+                    <span className="font-bold">{stat.delayed || 0}</span>
                   </div>
-                )}
+                </div>
 
                 {/* Completed */}
-                {stat.completed > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
-                        <Award className="w-4 h-4" />
-                        <span>Completed</span>
-                      </div>
-                      <span className="font-bold">{stat.completed} ({getStatusPercentage(stat, 'completed')}%)</span>
-                    </div>
-                    <div className="w-full h-1.5 bg-white bg-opacity-20 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-blue-300 rounded-full" 
-                        style={{ width: `${getStatusPercentage(stat, 'completed')}%` }} 
-                      />
-                    </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span>Completed</span>
+                    <span className="font-bold">{stat.completed || 0}</span>
                   </div>
-                )}
+                </div>
               </div>
-
-              {/* Empty State */}
-              {stat.total === 0 && (
-                <p className="text-xs opacity-75 italic">No projects yet</p>
-              )}
             </div>
           </div>
         ))}

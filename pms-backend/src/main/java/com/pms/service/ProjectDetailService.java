@@ -1,9 +1,14 @@
 package com.pms.service;
 
+import com.pms.dto.CategoryStatDTO;
 import com.pms.dto.ProjectDetailRequest;
 import com.pms.dto.ProjectDetailResponse;
 import com.pms.entity.ProjectDetail;
+import com.pms.entity.ProgrammeType;
+import com.pms.entity.ProjectCategory;
 import com.pms.repository.ProjectDetailRepository;
+import com.pms.repository.ProgrammeTypeRepository;
+import com.pms.repository.ProjectCategoryRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -12,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.time.Year;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -20,6 +26,8 @@ import java.util.stream.Collectors;
 public class ProjectDetailService {
     
     private final ProjectDetailRepository projectDetailRepository;
+    private final ProgrammeTypeRepository programmeTypeRepository;
+    private final ProjectCategoryRepository projectCategoryRepository;
     
     // Generate project code in format: YEARP001, YEARP002, etc.
     private String generateProjectCode() {
@@ -50,6 +58,14 @@ public class ProjectDetailService {
                 .collect(Collectors.toList());
     }
     
+    // Get projects by Project Director OR Programme Director (for logged-in director)
+    public List<ProjectDetailResponse> getProjectDetailsByDirectorOrProgrammeDirector(String employeeCode) {
+        return projectDetailRepository.findByMissionProjectDirectorOrProgrammeDirector(employeeCode, employeeCode)
+                .stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
+    }
+    
     // Get projects by Project Director
     public List<ProjectDetailResponse> getProjectDetailsByDirector(String directorId) {
         return projectDetailRepository.findByMissionProjectDirector(directorId)
@@ -73,7 +89,7 @@ public class ProjectDetailService {
         return convertToResponse(project);
     }
     
-    // Create new project
+    // Create new project - auto-populate userId, regStatus, regTime
     @Transactional
     public ProjectDetailResponse createProjectDetail(ProjectDetailRequest request, String userId) {
         // Validation
@@ -92,9 +108,10 @@ public class ProjectDetailService {
                 .missionProjectFullName(request.getMissionProjectFullName())
                 .missionProjectShortName(request.getMissionProjectShortName())
                 .missionProjectDescription(request.getMissionProjectDescription())
-                .projectCategoryCode(request.getProjectCategoryCode())
                 .budgetCode(request.getBudgetCode())
+                .programmeTypeCode(request.getProgrammeTypeCode())
                 .projectTypesCode(request.getProjectTypesCode())
+                .leadCentreCode(request.getLeadCentreCode())
                 .sanctionedAuthority(request.getSanctionedAuthority())
                 .individualCombinedSanctionCost(request.getIndividualCombinedSanctionCost())
                 .sanctionedCost(request.getSanctionedCost())
@@ -104,19 +121,13 @@ public class ProjectDetailService {
                 .fsCopy(request.getFsCopy())
                 .missionProjectDirector(request.getMissionProjectDirector())
                 .programmeDirector(request.getProgrammeDirector())
-                .cumExpUpToPrevFy(request.getCumExpUpToPrevFy())
-                .curYrExp(request.getCurYrExp())
-                .currentStatusPercentage(request.getCurrentStatusPercentage())
-                .currentStatus(request.getCurrentStatus())
-                .currentStatusRemarks(request.getCurrentStatusRemarks())
-                .regStage("S1")
-                .userId(userId)
-                .regStatus("R")
-                .regTime(LocalDateTime.now())
+                .userId(userId)  // Auto-populate with current user
+                .regStatus("R")   // Auto-populate with "R"
+                .regTime(LocalDateTime.now())  // Auto-populate with current time
                 .build();
         
         ProjectDetail savedProject = projectDetailRepository.save(project);
-        log.info("Project Detail created successfully: {}", savedProject.getMissionProjectCode());
+        log.info("Project Detail created successfully: {} by user: {}", savedProject.getMissionProjectCode(), userId);
         
         return convertToResponse(savedProject);
     }
@@ -141,7 +152,6 @@ public class ProjectDetailService {
         project.setMissionProjectFullName(request.getMissionProjectFullName());
         project.setMissionProjectShortName(request.getMissionProjectShortName());
         project.setMissionProjectDescription(request.getMissionProjectDescription());
-        project.setProjectCategoryCode(request.getProjectCategoryCode());
         project.setBudgetCode(request.getBudgetCode());
         project.setProjectTypesCode(request.getProjectTypesCode());
         project.setSanctionedAuthority(request.getSanctionedAuthority());
@@ -153,14 +163,9 @@ public class ProjectDetailService {
         project.setFsCopy(request.getFsCopy());
         project.setMissionProjectDirector(request.getMissionProjectDirector());
         project.setProgrammeDirector(request.getProgrammeDirector());
-        project.setCumExpUpToPrevFy(request.getCumExpUpToPrevFy());
-        project.setCurYrExp(request.getCurYrExp());
-        project.setCurrentStatusPercentage(request.getCurrentStatusPercentage());
-        project.setCurrentStatus(request.getCurrentStatus());
-        project.setCurrentStatusRemarks(request.getCurrentStatusRemarks());
         
         ProjectDetail updatedProject = projectDetailRepository.save(project);
-        log.info("Project Detail updated successfully: {}", updatedProject.getMissionProjectCode());
+        log.info("Project Detail updated successfully: {} by user: {}", updatedProject.getMissionProjectCode(), userId);
         
         return convertToResponse(updatedProject);
     }
@@ -183,14 +188,6 @@ public class ProjectDetailService {
         
         if (request.getMissionProjectShortName() == null || request.getMissionProjectShortName().trim().isEmpty()) {
             throw new RuntimeException("Project Short Name is required");
-        }
-        
-        if (request.getMissionProjectDescription() == null || request.getMissionProjectDescription().trim().isEmpty()) {
-            throw new RuntimeException("Project Description is required");
-        }
-        
-        if (request.getProjectCategoryCode() == null || request.getProjectCategoryCode().trim().isEmpty()) {
-            throw new RuntimeException("Project Category Code is required");
         }
         
         if (request.getBudgetCode() == null || request.getBudgetCode().trim().isEmpty()) {
@@ -228,21 +225,120 @@ public class ProjectDetailService {
         if (request.getProgrammeDirector() == null || request.getProgrammeDirector().trim().isEmpty()) {
             throw new RuntimeException("Programme Director is required");
         }
+    }
+    
+    public Object getCategoryStats() {
+        List<ProjectDetail> projects = projectDetailRepository.findAllOrderByCodeDesc();
         
-        if (request.getCurrentStatus() == null || request.getCurrentStatus().trim().isEmpty()) {
-            throw new RuntimeException("Current Status is required");
-        }
+        Map<String, CategoryStatDTO> categoryStats = projects.stream()
+                .collect(Collectors.groupingBy(
+                        project -> {
+                            // Get programme type for this project
+                            if (project.getProgrammeTypeCode() != null) {
+                                ProgrammeType programmeType = programmeTypeRepository.findById(project.getProgrammeTypeCode()).orElse(null);
+                                if (programmeType != null && programmeType.getProjectCategoryCode() != null) {
+                                    return programmeType.getProjectCategoryCode();
+                                }
+                            }
+                            return "UNKNOWN";
+                        },
+                        Collectors.counting()
+                ))
+                .entrySet().stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        entry -> {
+                            String categoryCode = entry.getKey();
+                            long count = entry.getValue();
+                            
+                            // Fetch category details
+                            ProjectCategory category = null;
+                            if (!categoryCode.equals("UNKNOWN")) {
+                                category = projectCategoryRepository.findById(categoryCode).orElse(null);
+                            }
+                            
+                            return new CategoryStatDTO(
+                                    categoryCode,
+                                    category != null ? category.getProjectCategoryFullName() : "Unknown",
+                                    category != null ? category.getProjectCategoryShortName() : "UNK",
+                                    (int) count
+                            );
+                        }
+                ));
+        
+        return Map.of("categories", categoryStats.values());
+    }
+    
+    public Object getCategoryStatsByDirector(String employeeCode) {
+        List<ProjectDetail> projects = projectDetailRepository.findByMissionProjectDirectorOrProgrammeDirector(employeeCode, employeeCode);
+        
+        Map<String, CategoryStatDTO> categoryStats = projects.stream()
+                .collect(Collectors.groupingBy(
+                        project -> {
+                            // Get programme type for this project
+                            if (project.getProgrammeTypeCode() != null) {
+                                ProgrammeType programmeType = programmeTypeRepository.findById(project.getProgrammeTypeCode()).orElse(null);
+                                if (programmeType != null && programmeType.getProjectCategoryCode() != null) {
+                                    return programmeType.getProjectCategoryCode();
+                                }
+                            }
+                            return "UNKNOWN";
+                        },
+                        Collectors.counting()
+                ))
+                .entrySet().stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        entry -> {
+                            String categoryCode = entry.getKey();
+                            long count = entry.getValue();
+                            
+                            // Fetch category details
+                            ProjectCategory category = null;
+                            if (!categoryCode.equals("UNKNOWN")) {
+                                category = projectCategoryRepository.findById(categoryCode).orElse(null);
+                            }
+                            
+                            return new CategoryStatDTO(
+                                    categoryCode,
+                                    category != null ? category.getProjectCategoryFullName() : "Unknown",
+                                    category != null ? category.getProjectCategoryShortName() : "UNK",
+                                    (int) count
+                            );
+                        }
+                ));
+        
+        return Map.of("categories", categoryStats.values());
+    }
+    
+    @lombok.Data
+    @lombok.AllArgsConstructor
+    public static class CategoryStatDTO {
+        private String projectCategoryCode;
+        private String projectCategoryFullName;
+        private String projectCategoryShortName;
+        private int projectCount;
     }
     
     private ProjectDetailResponse convertToResponse(ProjectDetail project) {
+        // Calculate cumulative expenditure (previous FY + current year)
+        java.math.BigDecimal cumulativeExpenditureToDate = java.math.BigDecimal.ZERO;
+        if (project.getCumExpUpToPrevFy() != null) {
+            cumulativeExpenditureToDate = cumulativeExpenditureToDate.add(project.getCumExpUpToPrevFy());
+        }
+        if (project.getCurYrExp() != null) {
+            cumulativeExpenditureToDate = cumulativeExpenditureToDate.add(project.getCurYrExp());
+        }
+        
         return ProjectDetailResponse.builder()
                 .missionProjectCode(project.getMissionProjectCode())
                 .missionProjectFullName(project.getMissionProjectFullName())
                 .missionProjectShortName(project.getMissionProjectShortName())
                 .missionProjectDescription(project.getMissionProjectDescription())
-                .projectCategoryCode(project.getProjectCategoryCode())
                 .budgetCode(project.getBudgetCode())
+                .programmeTypeCode(project.getProgrammeTypeCode())
                 .projectTypesCode(project.getProjectTypesCode())
+                .leadCentreCode(project.getLeadCentreCode())
                 .sanctionedAuthority(project.getSanctionedAuthority())
                 .individualCombinedSanctionCost(project.getIndividualCombinedSanctionCost())
                 .sanctionedCost(project.getSanctionedCost())
@@ -254,12 +350,13 @@ public class ProjectDetailService {
                 .programmeDirector(project.getProgrammeDirector())
                 .cumExpUpToPrevFy(project.getCumExpUpToPrevFy())
                 .curYrExp(project.getCurYrExp())
+                .cumulativeExpenditureToDate(cumulativeExpenditureToDate)
                 .currentStatusPercentage(project.getCurrentStatusPercentage())
                 .currentStatus(project.getCurrentStatus())
                 .currentStatusRemarks(project.getCurrentStatusRemarks())
                 .userId(project.getUserId())
                 .regStatus(project.getRegStatus())
-                .regStage(project.getRegStage())
+                .regTime(project.getRegTime())
                 .build();
     }
 }

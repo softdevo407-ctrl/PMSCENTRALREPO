@@ -19,6 +19,7 @@ interface CoreUISearchableSelectProps {
   clearable?: boolean;
   className?: string;
   isLoading?: boolean;
+  isLarge?: boolean;
 }
 
 const CoreUISearchableSelect: React.FC<CoreUISearchableSelectProps> = ({
@@ -34,6 +35,7 @@ const CoreUISearchableSelect: React.FC<CoreUISearchableSelectProps> = ({
   clearable = true,
   className = '',
   isLoading = false,
+  isLarge = false,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isOpen, setIsOpen] = useState(false);
@@ -118,7 +120,7 @@ const CoreUISearchableSelect: React.FC<CoreUISearchableSelectProps> = ({
   return (
     <div ref={containerRef} className={`relative ${className}`}>
       {/* Label */}
-      <label className="block text-sm font-semibold text-gray-700 mb-2">
+      <label className={`block font-semibold text-gray-700 mb-2 ${isLarge ? 'text-lg' : 'text-sm'} ${isLarge ? 'uppercase tracking-wide' : ''}`}>
         {label}
         {required && <span className="text-red-500 ml-1">*</span>}
       </label>
@@ -135,6 +137,8 @@ const CoreUISearchableSelect: React.FC<CoreUISearchableSelectProps> = ({
           onKeyDown={handleKeyDown}
           disabled={disabled}
           className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all pr-10 ${
+            isLarge ? 'py-4 text-base' : 'text-sm'
+          } ${
             error ? 'border-red-500' : 'border-gray-300'
           } ${disabled ? 'bg-gray-50 cursor-not-allowed' : 'bg-white'}`}
         />
@@ -171,7 +175,7 @@ const CoreUISearchableSelect: React.FC<CoreUISearchableSelectProps> = ({
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-xl z-[1000] max-h-64 overflow-y-auto">
           {isLoading ? (
             <div className="px-4 py-3 text-center text-gray-500 text-sm">
               Loading...
