@@ -20,6 +20,7 @@ import { MyProjectsPage } from './src/components/pages/MyProjectsPage';
 import { ProjectSchedulingPage } from './src/components/pages/ProjectSchedulingPage';
 import { RevisionsPage } from './src/components/pages/RevisionsPage';
 import { AssignedProjectsPage } from './src/components/pages/AssignedProjectsPage';
+import { AllProjectsPage } from './src/components/pages/AllProjectsPage';
 import { MonitoringPage } from './src/components/pages/MonitoringPage';
 import { ApprovalsPage } from './src/components/pages/ApprovalsPage';
 import { OversightPage } from './src/components/pages/OversightPage';
@@ -307,7 +308,7 @@ const App: React.FC = () => {
           <ProjectDefinitionPage autoOpenForm={true} />
         )}
         {currentPage === 'my-projects' && userRole === 'Project Director' && (
-          <MyProjectsPage userName={currentUserName} />
+          <MyProjectsPage userName={currentUserName} onCollapseSidebar={() => setIsSidebarOpen(false)} />
         )}
         {currentPage === 'scheduling' && userRole === 'Project Director' && (
           <ProjectSchedulingPage userName={currentUserName} />
@@ -344,7 +345,7 @@ const App: React.FC = () => {
           />
         )}
         {currentPage === 'all-projects' && userRole === 'Chairman' && (
-          <OversightPage userName={currentUserName} />
+          <AllProjectsPage userName={currentUserName} onNavigate={setCurrentPage} />
         )}
         {currentPage === 'oversight' && userRole === 'Chairman' && (
           <OversightPage userName={currentUserName} />

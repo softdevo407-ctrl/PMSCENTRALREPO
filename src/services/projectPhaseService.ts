@@ -31,7 +31,6 @@ export interface ActivityRequest {
 
 export interface ProjectPhaseResponse {
   id: number;
-  projectId: number;
   phaseName: string;
   phaseWeight: number;
   status: string;
@@ -100,9 +99,9 @@ class ProjectPhaseService {
     return headers;
   }
 
-  async createPhase(projectId: number, request: ProjectPhaseRequest): Promise<ProjectPhaseResponse> {
+  async createPhase(request: ProjectPhaseRequest): Promise<ProjectPhaseResponse> {
     try {
-      const response = await fetch(`${API_BASE_URL}/projects/${projectId}/phases`, {
+      const response = await fetch(`${API_BASE_URL}/project-phases-generic`, {
         method: "POST",
         headers: this.getHeaders(),
         body: JSON.stringify(request),
@@ -120,9 +119,9 @@ class ProjectPhaseService {
     }
   }
 
-  async getPhasesByProject(projectId: number): Promise<ProjectPhaseResponse[]> {
+  async getPhasesByProject(): Promise<ProjectPhaseResponse[]> {
     try {
-      const response = await fetch(`${API_BASE_URL}/projects/${projectId}/phases`, {
+      const response = await fetch(`${API_BASE_URL}/project-phases-generic`, {
         method: "GET",
         headers: this.getHeaders(),
       });
@@ -138,9 +137,9 @@ class ProjectPhaseService {
     }
   }
 
-  async getPhaseById(projectId: number, phaseId: number): Promise<ProjectPhaseResponse> {
+  async getPhaseById(phaseId: number): Promise<ProjectPhaseResponse> {
     try {
-      const response = await fetch(`${API_BASE_URL}/projects/${projectId}/phases/${phaseId}`, {
+      const response = await fetch(`${API_BASE_URL}/project-phases-generic/${phaseId}`, {
         method: "GET",
         headers: this.getHeaders(),
       });
@@ -156,9 +155,9 @@ class ProjectPhaseService {
     }
   }
 
-  async updatePhase(projectId: number, phaseId: number, request: ProjectPhaseRequest): Promise<ProjectPhaseResponse> {
+  async updatePhase(phaseId: number, request: ProjectPhaseRequest): Promise<ProjectPhaseResponse> {
     try {
-      const response = await fetch(`${API_BASE_URL}/projects/${projectId}/phases/${phaseId}`, {
+      const response = await fetch(`${API_BASE_URL}/project-phases-generic/${phaseId}`, {
         method: "PUT",
         headers: this.getHeaders(),
         body: JSON.stringify(request),
@@ -176,9 +175,9 @@ class ProjectPhaseService {
     }
   }
 
-  async deletePhase(projectId: number, phaseId: number): Promise<void> {
+  async deletePhase(phaseId: number): Promise<void> {
     try {
-      const response = await fetch(`${API_BASE_URL}/projects/${projectId}/phases/${phaseId}`, {
+      const response = await fetch(`${API_BASE_URL}/project-phases-generic/${phaseId}`, {
         method: "DELETE",
         headers: this.getHeaders(),
       });

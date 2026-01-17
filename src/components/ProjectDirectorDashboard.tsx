@@ -18,7 +18,7 @@ import { CategoryStatsCards } from './CategoryStatsCards';
 
 interface ProjectDirectorDashboardProps {
   userName: string;
-  onNavigate: (page: string, category?: string) => void;
+  onNavigate: (page: string, categoryOrProjectCode?: string, additionalData?: any) => void;
 }
 
 const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ userName, onNavigate }) => {
@@ -27,6 +27,10 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
   const [myProjects, setMyProjects] = useState<ProjectDetailResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<string>('');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   // Fetch projects on mount and when user changes
   useEffect(() => {
@@ -52,9 +56,8 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
     }
   };
 
-  const mySchedulings = SAMPLE_PROJECT_SCHEDULING.filter((s) => {
-    return myProjects.some((p) => p.id === s.projectDefinitionId);
-  });
+  // Using sample data for scheduling - can be enhanced with API call
+  const mySchedulings = SAMPLE_PROJECT_SCHEDULING;
   const myRevisions = SAMPLE_REVISION_REQUESTS.filter((r) => r.requestedBy === userName);
 
   const stats = {
@@ -64,6 +67,75 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
     delayed: myProjects.filter((p) => p.missionProjectCode?.toLowerCase().includes('delayed')).length,
     pendingRevisions: myRevisions.filter((r) => r.status === 'PENDING').length,
   };
+
+  // Enhanced utilities
+  const computeProgress = (project: ProjectDetailResponse) => {
+    const done = project.cumExpUpToPrevFy || 0;
+    const total = project.sanctionedCost || 1;
+    const pct = Math.round(Math.min(100, Math.max(0, (done / total) * 100)));
+    return isFinite(pct) ? pct : 0;
+  };
+
+  const makeSparklinePoints = (pct: number) => {
+    // generate 6 small points around pct for a simple sparkline
+    const base = Math.max(5, pct);
+    const pts = [base - 10, base - 4, base - 2, base, base + 6, base + 12].map(v => Math.max(0, Math.min(100, v)));
+    return pts;
+  };
+
+  const handleExportCSV = () => {
+    const rows = filteredProjects.map(p => ({
+      projectCode: p.missionProjectCode,
+      name: p.missionProjectFullName,
+      shortName: p.missionProjectShortName,
+      status: p.regStatus === 'R' ? 'Active' : 'Inactive',
+      sanctionedCost: p.sanctionedCost,
+      endDate: p.originalSchedule
+    }));
+    const csv = [Object.keys(rows[0] || {}).join(','), ...rows.map(r => Object.values(r).map(v => `"${String(v ?? '')}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `projects_export_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleSort = (key: string) => {
+    if (sortBy === key) setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
+    else { setSortBy(key); setSortDir('asc'); }
+  };
+
+  // Derived list after search, filter and sort
+  const filteredProjects = myProjects
+    .filter(p => {
+      const q = query.trim().toLowerCase();
+      if (q) {
+        const inName = (p.missionProjectFullName || '').toLowerCase().includes(q);
+        const inShort = (p.missionProjectShortName || '').toLowerCase().includes(q);
+        const inCode = (p.missionProjectCode || '').toLowerCase().includes(q);
+        if (!inName && !inShort && !inCode) return false;
+      }
+      if (statusFilter === 'active') return p.regStatus === 'R';
+      if (statusFilter === 'inactive') return p.regStatus !== 'R';
+      return true;
+    })
+    .sort((a, b) => {
+      if (!sortBy) return 0;
+      let av: any = '';
+      let bv: any = '';
+      switch (sortBy) {
+        case 'name': av = a.missionProjectFullName || ''; bv = b.missionProjectFullName || ''; break;
+        case 'budget': av = a.sanctionedCost || 0; bv = b.sanctionedCost || 0; break;
+        case 'endDate': av = new Date(a.originalSchedule || '').getTime() || 0; bv = new Date(b.originalSchedule || '').getTime() || 0; break;
+        case 'status': av = a.regStatus || ''; bv = b.regStatus || ''; break;
+        default: break;
+      }
+      if (av < bv) return sortDir === 'asc' ? -1 : 1;
+      if (av > bv) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
 
   const handleNewProject = async (data: Record<string, string>) => {
     try {
@@ -76,10 +148,12 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
         missionProjectFullName: data.projectName,
         missionProjectShortName: data.shortName,
         budgetCode: data.budgetCode,
-        projectTypesCode: 'DEFAULT', // Default project type
+        projectTypesCode: 'DEFAULT',
+        programmeTypeCode: 'DEFAULT',
+        leadCentreCode: 'DEFAULT',
         sanctionedAuthority: 'Not Specified',
         individualCombinedSanctionCost: sanctionedAmount.toString(),
-        sanctionedCost: sanctionedAmount * 1000000, // Convert to actual amount
+        sanctionedCost: sanctionedAmount * 1000000,
         dateOffs: new Date().toISOString().split('T')[0],
         originalSchedule: data.endDate,
         missionProjectDirector: user?.employeeCode || '',
@@ -132,7 +206,7 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
      
       </div>
 
-      {/* Category-wise Stats Cards */}
+      {/* Category-wise Stats Cards - Only renders if categories exist with data */}
       <CategoryStatsCards onNavigate={onNavigate} employeeCode={user?.employeeCode} />
 
       {/* Statistics Grid */}
@@ -189,6 +263,20 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
       </div>
 
       {/* Projects Table */}
+      <div className="flex items-center gap-3">
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search projects..."
+          className="px-4 py-2 border border-gray-200 rounded-lg w-full max-w-sm"
+        />
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-3 py-2 border rounded-lg">
+          <option value="all">All Status</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+        <button onClick={handleExportCSV} className="ml-auto px-4 py-2 bg-slate-800 text-white rounded-lg text-sm">Export CSV</button>
+      </div>
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         <div className="p-6 border-b border-gray-200">
           <h3 className="text-xl font-bold text-gray-900">Your Projects</h3>
@@ -210,7 +298,7 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
               Retry
             </button>
           </div>
-        ) : myProjects.length === 0 ? (
+        ) : filteredProjects.length === 0 ? (
           <div className="p-12 text-center">
             <p className="text-gray-600 mb-4">No projects yet. Create your first project!</p>
             <button
@@ -226,16 +314,16 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Project Name</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Budget</th>
+                  <th onClick={() => handleSort('name')} className="px-6 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer">Project Name</th>
+                  <th onClick={() => handleSort('status')} className="px-6 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer">Status</th>
+                  <th onClick={() => handleSort('budget')} className="px-6 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer">Budget</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Progress</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">End Date</th>
+                  <th onClick={() => handleSort('endDate')} className="px-6 py-3 text-left text-sm font-semibold text-gray-700 cursor-pointer">End Date</th>
                   <th className="px-6 py-3 text-left text-sm font-semibold text-gray-700">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {myProjects.map((project) => {
+                {filteredProjects.map((project) => {
                   return (
                     <tr key={project.missionProjectCode} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4">
@@ -243,7 +331,7 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
                         <p className="text-sm text-gray-500">{project.missionProjectShortName}</p>
                       </td>
                       <td className="px-6 py-4">
-                        <span className={`px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800`}>
+                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${project.regStatus === 'R' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-700'}`}>
                           {project.regStatus === 'R' ? 'Active' : 'Inactive'}
                         </span>
                       </td>
@@ -251,26 +339,45 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
                         <p className="font-semibold text-gray-900">₹{(project.sanctionedCost / 1000000).toFixed(1)}M</p>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-24 h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div className="flex items-center gap-3">
+                          <div className="w-36 h-2 bg-gray-200 rounded-full overflow-hidden">
                             <div
                               className="h-full bg-gradient-to-r from-blue-500 to-blue-600"
-                              style={{ width: `${50}%` }}
+                              style={{ width: `${computeProgress(project)}%` }}
                             />
                           </div>
-                          <span className="text-sm font-semibold text-gray-900">{50}%</span>
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm font-semibold text-gray-900">{computeProgress(project)}%</span>
+                            <svg width="60" height="20" viewBox="0 0 60 20" className="inline-block">
+                              <polyline
+                                fill="none"
+                                stroke="#60A5FA"
+                                strokeWidth={2}
+                                points={makeSparklinePoints(computeProgress(project)).map((v, i) => `${(i * 10)},${20 - (v / 5)}`).join(' ')}
+                              />
+                            </svg>
+                          </div>
                         </div>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600">
                         {new Date(project.originalSchedule).toLocaleDateString('en-IN')}
                       </td>
                       <td className="px-6 py-4">
-                        <button
-                          onClick={() => onNavigate('my-projects')}
-                          className="text-blue-600 hover:text-blue-800 font-semibold text-sm"
-                        >
-                          View
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => onNavigate('my-projects', project.missionProjectCode, { project })}
+                            className="text-blue-600 hover:text-blue-800 font-semibold text-sm"
+                          >
+                            View
+                          </button>
+                          <button
+                            onClick={() => onNavigate('scheduling', project.missionProjectCode, { project })}
+                            className="text-slate-600 hover:text-slate-900 text-sm"
+                          >
+                            Configure
+                          </button>
+                          <button onClick={() => { navigator.clipboard.writeText(project.missionProjectCode || ''); alert('Project code copied'); }} className="text-xs px-2 py-1 bg-gray-100 rounded">Copy</button>
+                        </div>
                       </td>
                     </tr>
                   );

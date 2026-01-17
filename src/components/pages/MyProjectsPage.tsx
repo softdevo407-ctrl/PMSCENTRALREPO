@@ -6,14 +6,21 @@ import { projectStatusCodeService } from '../../services/projectStatusCodeServic
 import { projectTypeService } from '../../services/projectTypeService';
 import { ProgrammeTypeService } from '../../services/programmeTypeService';
 import { ProjectCategoryService } from '../../services/projectCategoryService';
+import { ProjectPhaseGenericService } from '../../services/projectPhaseGenericService';
+import { ProjectMilestoneService } from '../../services/projectMilestoneService';
+import { ProjectActivityService } from '../../services/projectActivityService';
+import { ProjectScheduleService } from '../../services/projectScheduleService';
 import { AddPhaseModal } from '../AddPhaseModal';
 import { ProjectPhasesPanel } from '../ProjectPhasesPanel';
 import { AddProjectDefinitionModal } from '../AddProjectDefinitionModal';
 import { StatusUpdationModal } from '../StatusUpdationModal';
+import ProjectMatrix from '../ProjectConfigurationMatrix';
+import type { ProjectPhase, Activity, ActivityFormData } from '../ProjectConfigurationMatrix';
 
 interface MyProjectsPageProps {
   userName: string;
   selectedCategory?: string;
+  onCollapseSidebar?: () => void;
 }
 
 interface StatusMap {
@@ -28,7 +35,7 @@ interface CategoryMap {
   [key: string]: string;
 }
 
-export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, selectedCategory }) => {
+export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, selectedCategory, onCollapseSidebar }) => {
   const { user } = useAuth();
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -40,12 +47,29 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
   const [isAddPhaseModalOpen, setIsAddPhaseModalOpen] = useState(false);
   const [isAddProjectModalOpen, setIsAddProjectModalOpen] = useState(false);
   const [isStatusUpdationModalOpen, setIsStatusUpdationModalOpen] = useState(false);
+  const [isConfigurationPanelOpen, setIsConfigurationPanelOpen] = useState(false);
   const [phasesRefreshKey, setPhasesRefreshKey] = useState(0);
   const [editingPhaseId, setEditingPhaseId] = useState<number | null>(null);
   const [editingProjectCode, setEditingProjectCode] = useState<string | null>(null);
   const [statusMap, setStatusMap] = useState<StatusMap>({});
   const [typeMap, setTypeMap] = useState<TypeMap>({});
   const [categoryMap, setCategoryMap] = useState<CategoryMap>({});
+  const [phases, setPhases] = useState<ProjectPhase[]>([]);
+  const [configLoading, setConfigLoading] = useState(false);
+  const [configError, setConfigError] = useState<string | null>(null);
+  const [phaseOptions, setPhaseOptions] = useState<any[]>([]);
+  const [milestoneOptions, setMilestoneOptions] = useState<any[]>([]);
+  const [activityOptions, setActivityOptions] = useState<any[]>([]);
+  const [isPhaseSelectionOpen, setIsPhaseSelectionOpen] = useState(false);
+  const [optionsLoading, setOptionsLoading] = useState(false);
+  const [isMilestoneConfigOpen, setIsMilestoneConfigOpen] = useState(false);
+  const [selectedPhaseForMilestone, setSelectedPhaseForMilestone] = useState<string>('');
+  const [milestonesToAdd, setMilestonesToAdd] = useState<Array<{ code: string; title: string; startDate: string; endDate: string; months: number }>>([]);
+  const [milestoneForm, setMilestoneForm] = useState({ milestoneCode: '', startDate: '', endDate: '' });
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [isActivityEditOpen, setIsActivityEditOpen] = useState(false);
+  const [editingActivity, setEditingActivity] = useState<{ phaseId: string; milestoneId: string; activityId: string } | null>(null);
+  const [editActivityForm, setEditActivityForm] = useState<ActivityFormData>({ title: '', startDate: '', endDate: '', sortOrder: 0 });
 
   // Fetch projects for current user
   useEffect(() => {
@@ -74,22 +98,12 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
         });
         setTypeMap(newTypeMap);
         
-        // Fetch all programme types to get category codes, then fetch categories
-        const allProgrammeTypes = await ProgrammeTypeService.getAllProgrammeTypes();
+        // Fetch all project categories and build map
+        const allProjectCategories = await ProjectCategoryService.getAllProjectCategories();
         const newCategoryMap: CategoryMap = {};
-        
-        // Get unique category codes from programme types
-        const uniqueCategoryCodes = Array.from(new Set(allProgrammeTypes.map(pt => pt.projectCategoryCode)));
-        
-        // Fetch each category and build map
-        for (const categoryCode of uniqueCategoryCodes) {
-          try {
-            const category = await ProjectCategoryService.getProjectCategoryByCode(categoryCode);
-            newCategoryMap[categoryCode] = category.projectCategoryFullName;
-          } catch (err) {
-            console.error(`Failed to fetch category ${categoryCode}:`, err);
-          }
-        }
+        allProjectCategories.forEach(category => {
+          newCategoryMap[category.projectCategoryCode] = category.projectCategoryFullName;
+        });
         setCategoryMap(newCategoryMap);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Failed to fetch projects';
@@ -101,6 +115,142 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
 
     fetchProjects();
   }, [user?.id]);
+
+  // Load existing project schedule data when configuration panel opens
+  useEffect(() => {
+    const loadProjectSchedules = async () => {
+      if (!isConfigurationPanelOpen || !selectedProject) {
+        setPhases([]);
+        return;
+      }
+
+      try {
+        setConfigLoading(true);
+        setConfigError(null);
+        
+        // Fetch existing schedules from database
+        const schedules = await ProjectScheduleService.getSchedulesByProjectCode(selectedProject);
+        
+        if (!schedules || schedules.length === 0) {
+          setPhases([]);
+          return;
+        }
+
+        // Parse schedules into phases/milestones/activities structure
+        const phasesMap = new Map<string, ProjectPhase>();
+        
+        schedules.forEach(schedule => {
+          const scheduleCode = schedule.id.scheduleCode;
+          const missionProjectCode = schedule.id.missionProjectCode;
+          
+          // Determine the hierarchy level
+          if (schedule.scheduleLevel === 1) {
+            // Phase level
+            if (!phasesMap.has(scheduleCode)) {
+              phasesMap.set(scheduleCode, {
+                id: scheduleCode,
+                name: scheduleCode, // You might want to use a better name from a lookup
+                milestones: [],
+                sortOrder: schedule.hierarchyOrder || 1
+              });
+            }
+          } else if (schedule.scheduleLevel === 2) {
+            // Milestone level
+            const phaseCode = schedule.scheduleParentCode || '';
+            if (!phasesMap.has(phaseCode)) {
+              phasesMap.set(phaseCode, {
+                id: phaseCode,
+                name: phaseCode,
+                milestones: [],
+                sortOrder: 1
+              });
+            }
+            
+            const phase = phasesMap.get(phaseCode)!;
+            if (!phase.milestones.find(m => m.id === scheduleCode)) {
+              phase.milestones.push({
+                id: scheduleCode,
+                code: scheduleCode,
+                title: scheduleCode,
+                startDate: schedule.scheduleStartDate || '',
+                endDate: schedule.scheduleEndDate || '',
+                months: 0,
+                sortOrder: schedule.hierarchyOrder || 1,
+                activities: []
+              });
+            }
+          } else if (schedule.scheduleLevel === 3) {
+            // Activity level
+            const parentCode = schedule.scheduleParentCode || '';
+            
+            // Find phase that contains this milestone
+            let foundPhase: ProjectPhase | null = null;
+            let foundMilestone: any = null;
+            
+            for (const phase of phasesMap.values()) {
+              const milestone = phase.milestones.find(m => m.code === parentCode);
+              if (milestone) {
+                foundPhase = phase;
+                foundMilestone = milestone;
+                break;
+              }
+            }
+            
+            // If phase doesn't exist, create it
+            if (!foundPhase) {
+              foundPhase = {
+                id: `PHASE-${parentCode}`,
+                name: `PHASE-${parentCode}`,
+                milestones: [],
+                sortOrder: 1
+              };
+              phasesMap.set(foundPhase.id, foundPhase);
+            }
+            
+            // If milestone doesn't exist, create it
+            if (!foundMilestone) {
+              foundMilestone = {
+                id: parentCode,
+                code: parentCode,
+                title: parentCode,
+                startDate: '',
+                endDate: '',
+                months: 0,
+                sortOrder: 1,
+                activities: []
+              };
+              foundPhase.milestones.push(foundMilestone);
+            }
+            
+            // Add activity to milestone
+            if (!foundMilestone.activities.find((a: Activity) => a.id === scheduleCode)) {
+              foundMilestone.activities.push({
+                id: scheduleCode,
+                title: scheduleCode,
+                startDate: schedule.scheduleStartDate || '',
+                endDate: schedule.scheduleEndDate || '',
+                sortOrder: schedule.hierarchyOrder || 1
+              });
+            }
+          }
+        });
+
+        // Convert map to array and sort
+        const loadedPhases = Array.from(phasesMap.values())
+          .sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+        
+        setPhases(loadedPhases);
+      } catch (error) {
+        console.error('Error loading project schedules:', error);
+        setConfigError('Failed to load project configuration');
+        setPhases([]);
+      } finally {
+        setConfigLoading(false);
+      }
+    };
+
+    loadProjectSchedules();
+  }, [isConfigurationPanelOpen, selectedProject]);
 
   const filteredProjects = myProjects.filter(p => {
     const matchStatus = filterStatus === 'all' || p.currentStatus === filterStatus;
@@ -148,6 +298,433 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
       'ON_HOLD': 'On Hold'
     };
     return status ? labels[status] || status : 'Unknown';
+  };
+
+  // Phase Management Handlers
+  const handleDeletePhase = (phaseId: string) => {
+    setPhases(phases.filter(p => p.id !== phaseId));
+  };
+
+  const handleUpdatePhase = (phaseId: string, updates: Partial<ProjectPhase>) => {
+    setPhases(phases.map(p => 
+      p.id === phaseId 
+        ? { ...p, ...updates }
+        : p
+    ));
+  };
+
+  const handleAddActivity = async (phaseId: string, milestoneId: string, activityData: ActivityFormData) => {
+    try {
+      // Update local state
+      const newActivityId = Math.random().toString();
+      setPhases(phases.map(p =>
+        p.id === phaseId
+          ? {
+              ...p,
+              milestones: p.milestones.map(m =>
+                m.id === milestoneId
+                  ? {
+                      ...m,
+                      activities: [...(m.activities || []), {
+                        id: newActivityId,
+                        title: activityData.title,
+                        startDate: activityData.startDate,
+                        endDate: activityData.endDate,
+                        sortOrder: activityData.sortOrder
+                      }]
+                    }
+                  : m
+              )
+            }
+          : p
+      ));
+      
+      // Save to backend ProjectSchedule table
+      if (selectedProject) {
+        let milestoneCode = '';
+        let phaseData = phases.find(p => p.id === phaseId);
+        if (phaseData) {
+          let foundMilestone = phaseData.milestones.find(m => m.id === milestoneId);
+          if (foundMilestone) {
+            milestoneCode = foundMilestone.code;
+          }
+        }
+        
+        // Generate activity schedule code (SA001, SA002, etc.)
+        const activityCode = `SA${String(activityData.sortOrder).padStart(3, '0')}`;
+        
+        const projectSchedule = {
+          id: {
+            missionProjectCode: selectedProject,
+            scheduleCode: activityCode
+          },
+          scheduleLevel: 3, // Activity level
+          scheduleParentCode: milestoneCode,
+          scheduleStartDate: activityData.startDate,
+          scheduleEndDate: activityData.endDate,
+          hierarchyOrder: activityData.sortOrder,
+          userId: user?.employeeCode || 'SYSTEM',
+          regStatus: 'R'
+        };
+        
+        await ProjectScheduleService.saveProjectSchedule(projectSchedule);
+      }
+    } catch (error) {
+      console.error('Error adding activity:', error);
+      alert('Activity added locally but failed to save to database. Please retry.');
+    }
+  };
+
+  const handleDeleteActivity = (phaseId: string, milestoneId: string, activityId: string) => {
+    setPhases(phases.map(p =>
+      p.id === phaseId
+        ? {
+            ...p,
+            milestones: p.milestones.map(m =>
+              m.id === milestoneId
+                ? {
+                    ...m,
+                    activities: (m.activities || []).filter(a => a.id !== activityId)
+                  }
+                : m
+            )
+          }
+        : p
+    ));
+  };
+
+  const handleUpdateActivitySort = async (phaseId: string, milestoneId: string, activityId: string, sortOrder: number) => {
+    try {
+      // Update local state
+      setPhases(phases.map(p =>
+        p.id === phaseId
+          ? {
+              ...p,
+              milestones: p.milestones.map(m =>
+                m.id === milestoneId
+                  ? {
+                      ...m,
+                      activities: (m.activities || []).map(a =>
+                        a.id === activityId
+                          ? { ...a, sortOrder }
+                          : a
+                      )
+                    }
+                  : m
+              )
+            }
+          : p
+      ));
+      
+      // Save to backend ProjectSchedule table with new sort order
+      if (selectedProject) {
+        let milestoneCode = '';
+        let phaseData = phases.find(p => p.id === phaseId);
+        if (phaseData) {
+          let foundMilestone = phaseData.milestones.find(m => m.id === milestoneId);
+          if (foundMilestone) {
+            milestoneCode = foundMilestone.code;
+            let foundActivity = foundMilestone.activities?.find(a => a.id === activityId);
+            if (foundActivity) {
+              const activityCode = `SA${String(sortOrder).padStart(3, '0')}`;
+              
+              const projectSchedule = {
+                id: {
+                  missionProjectCode: selectedProject,
+                  scheduleCode: activityCode
+                },
+                scheduleLevel: 3,
+                scheduleParentCode: milestoneCode,
+                scheduleStartDate: foundActivity.startDate,
+                scheduleEndDate: foundActivity.endDate,
+                hierarchyOrder: sortOrder,
+                userId: user?.employeeCode || 'SYSTEM',
+                regStatus: 'R'
+              };
+              
+              await ProjectScheduleService.updateProjectSchedule(projectSchedule);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error updating activity sort order:', error);
+    }
+  };
+
+  const handleUpdateMilestoneSort = (phaseId: string, milestoneId: string, sortOrder: number) => {
+    setPhases(phases.map(p =>
+      p.id === phaseId
+        ? {
+            ...p,
+            milestones: p.milestones.map(m =>
+              m.id === milestoneId
+                ? { ...m, sortOrder }
+                : m
+            )
+          }
+        : p
+    ));
+  };
+
+  const handleDeleteMilestone = (phaseId: string, milestoneId: string) => {
+    setPhases(phases.map(p =>
+      p.id === phaseId
+        ? {
+            ...p,
+            milestones: p.milestones.filter(m => m.id !== milestoneId)
+          }
+        : p
+    ));
+  };
+
+  const handleEditActivityOpen = (phaseId: string, milestoneId: string, activity: Activity) => {
+    setEditingActivity({ phaseId, milestoneId, activityId: activity.id });
+    setEditActivityForm({
+      title: activity.title,
+      startDate: activity.startDate,
+      endDate: activity.endDate,
+      sortOrder: activity.sortOrder
+    });
+    setIsActivityEditOpen(true);
+  };
+
+  const handleUpdateActivity = async () => {
+    if (!editingActivity || !editActivityForm.title || !selectedProject) return;
+    
+    try {
+      // First, update the local state
+      setPhases(phases.map(p =>
+        p.id === editingActivity.phaseId
+          ? {
+              ...p,
+              milestones: p.milestones.map(m =>
+                m.id === editingActivity.milestoneId
+                  ? {
+                      ...m,
+                      activities: (m.activities || []).map(a =>
+                        a.id === editingActivity.activityId
+                          ? {
+                              ...a,
+                              title: editActivityForm.title,
+                              startDate: editActivityForm.startDate,
+                              endDate: editActivityForm.endDate,
+                              sortOrder: editActivityForm.sortOrder
+                            }
+                          : a
+                      )
+                    }
+                  : m
+              )
+            }
+          : p
+      ));
+      
+      // Then, save to backend ProjectSchedule table
+      const projectData = myProjects.find(p => p.missionProjectCode === selectedProject);
+      if (projectData) {
+        // Find the milestone to get its code
+        let milestoneCode = '';
+        let phaseData = phases.find(p => p.id === editingActivity.phaseId);
+        if (phaseData) {
+          let foundMilestone = phaseData.milestones.find(m => m.id === editingActivity.milestoneId);
+          if (foundMilestone) {
+            milestoneCode = foundMilestone.code; // Use the milestone's actual code (SM001, SM002, etc.)
+          }
+        }
+        
+        // Generate activity schedule code (SA001, SA002, etc.) based on activity position
+        const activityCountInMilestone = phaseData?.milestones
+          .find(m => m.id === editingActivity.milestoneId)?.activities?.length || 0;
+        const activityCode = `SA${String(editActivityForm.sortOrder).padStart(3, '0')}`;
+        
+        const projectSchedule = {
+          id: {
+            missionProjectCode: selectedProject,
+            scheduleCode: activityCode
+          },
+          scheduleLevel: 3, // Activity level
+          scheduleParentCode: milestoneCode, // Use actual milestone code
+          scheduleStartDate: editActivityForm.startDate,
+          scheduleEndDate: editActivityForm.endDate,
+          hierarchyOrder: editActivityForm.sortOrder,
+          userId: user?.employeeCode || 'SYSTEM',
+          regStatus: 'R' // Changed to 'R' to match your data
+        };
+        
+        await ProjectScheduleService.saveProjectSchedule(projectSchedule);
+      }
+      
+      setIsActivityEditOpen(false);
+      setEditingActivity(null);
+      setEditActivityForm({ title: '', startDate: '', endDate: '', sortOrder: 0 });
+    } catch (error) {
+      console.error('Error updating activity:', error);
+      alert('Failed to save activity. Please try again.');
+    }
+  };
+
+  // Load API options
+  const loadApiOptions = async () => {
+    try {
+      setOptionsLoading(true);
+      const [phases, milestones, activities] = await Promise.all([
+        ProjectPhaseGenericService.getAllPhases(),
+        ProjectMilestoneService.getAllMilestones(),
+        ProjectActivityService.getAllProjectActivities()
+      ]);
+      
+      setPhaseOptions(phases);
+      setMilestoneOptions(milestones);
+      setActivityOptions(activities);
+    } catch (error) {
+      console.error('Error loading API options:', error);
+    } finally {
+      setOptionsLoading(false);
+    }
+  };
+
+  // Open phase selection modal and load options
+  const handleAddNewPhase = () => {
+    loadApiOptions();
+    setIsPhaseSelectionOpen(true);
+  };
+
+  // Handle phase selection - open milestone modal
+  const handlePhaseSelected = (phaseCode: string) => {
+    const selectedPhase = phaseOptions.find(p => p.projectPhaseCode === phaseCode);
+    
+    if (selectedPhase) {
+      setSelectedPhaseForMilestone(phaseCode);
+      setMilestonesToAdd([]);
+      setMilestoneForm({ milestoneCode: '', startDate: '', endDate: '' });
+      setValidationErrors([]);
+      setIsPhaseSelectionOpen(false);
+      setIsMilestoneConfigOpen(true);
+    }
+  };
+
+  // Calculate months between dates
+  const calculateMonths = (startDate: string, endDate: string): number => {
+    if (!startDate || !endDate) return 0;
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+    return Math.max(0, Math.round(months));
+  };
+
+  // Validate milestone data with industry standards
+  const validateMilestone = (milestone: typeof milestoneForm, existingMilestones: typeof milestonesToAdd): string[] => {
+    const errors: string[] = [];
+    
+    // Basic field validation
+    if (!milestone.milestoneCode || !milestone.milestoneCode.trim()) {
+      errors.push('Milestone is required');
+    }
+    
+    if (!milestone.startDate) {
+      errors.push('Start date is required');
+    }
+    
+    if (!milestone.endDate) {
+      errors.push('End date is required');
+    }
+    
+    // Date validation
+    if (milestone.startDate && milestone.endDate) {
+      const startDate = new Date(milestone.startDate);
+      const endDate = new Date(milestone.endDate);
+      
+      // End date must be after start date
+      if (endDate <= startDate) {
+        errors.push('End date must be after start date');
+      }
+      
+      // Minimum duration: 1 month (industry standard)
+      const months = calculateMonths(milestone.startDate, milestone.endDate);
+      if (months < 1) {
+        errors.push('Minimum milestone duration is 1 month');
+      }
+      
+      // Maximum duration: 48 months (4 years - industry standard for phase milestones)
+      if (months > 48) {
+        errors.push('Milestone duration should not exceed 48 months (4 years)');
+      }
+      
+      // Check for overlapping milestones (industry standard)
+      for (const existing of existingMilestones) {
+        const existingStart = new Date(existing.startDate);
+        const existingEnd = new Date(existing.endDate);
+        
+        // Overlapping condition: new start is before existing end AND new end is after existing start
+        if (startDate < existingEnd && endDate > existingStart) {
+          errors.push(`Milestone overlaps with existing milestone (${existing.code}) from ${existing.startDate} to ${existing.endDate}`);
+          break;
+        }
+      }
+    }
+    
+    return errors;
+  };
+
+  // Add milestone to temporary list (not to phase yet)
+  const handleAddMilestoneToModal = () => {
+    const currentPhase = phases.find(p => p.id === selectedPhaseForMilestone);
+    const existingMilestones = currentPhase?.milestones || [];
+    const errors = validateMilestone(milestoneForm, existingMilestones);
+    
+    if (errors.length > 0) {
+      setValidationErrors(errors);
+      return;
+    }
+    
+    const selectedMilestone = milestoneOptions.find(m => m.projectMilestoneCode === milestoneForm.milestoneCode);
+    
+    if (selectedMilestone) {
+      const months = calculateMonths(milestoneForm.startDate, milestoneForm.endDate);
+      
+      const newMilestone = {
+        id: `${selectedPhaseForMilestone}-milestone-${Date.now()}`,
+        code: milestoneForm.milestoneCode,
+        title: selectedMilestone.projectMilestoneFullName,
+        startDate: milestoneForm.startDate,
+        endDate: milestoneForm.endDate,
+        months: months,
+        sortOrder: 1,
+        activities: []
+      };
+      
+      // If phase doesn't exist yet (first milestone), create phase
+      if (!currentPhase) {
+        const selectedPhase = phaseOptions.find(p => p.projectPhaseCode === selectedPhaseForMilestone);
+        if (selectedPhase) {
+          const newPhase: ProjectPhase = {
+            id: selectedPhaseForMilestone,
+            name: selectedPhase.projectPhaseFullName,
+            milestones: [newMilestone],
+            sortOrder: phases.length + 1
+          };
+          setPhases([...phases, newPhase]);
+        }
+      } else {
+        // Add milestone to existing phase
+        setPhases(phases.map(p => {
+          if (p.id === selectedPhaseForMilestone) {
+            return {
+              ...p,
+              milestones: [...p.milestones, newMilestone]
+            };
+          }
+          return p;
+        }));
+      }
+      
+      // Close modal and reset form
+      setIsMilestoneConfigOpen(false);
+      setSelectedPhaseForMilestone('');
+      setMilestoneForm({ milestoneCode: '', startDate: '', endDate: '' });
+      setValidationErrors([]);
+    }
   };
 
   if (loading) {
@@ -213,9 +790,9 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Projects List */}
-        <div className="lg:col-span-2">
+      <div className="grid grid-cols-1 gap-6">
+        {/* Projects List - Full Width */}
+        <div>
           {/* Filters */}
           <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4 space-y-3">
             <div className="flex items-center gap-3 flex-wrap">
@@ -238,7 +815,7 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
                 className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="all">All Programme Types</option>
-                {Array.from(new Set(myProjects.map(p => p.projectTypesCode))).map(type => (
+                {Array.from(new Set(myProjects.map(p => p.projectTypesCode).filter(Boolean))).map(type => (
                   <option key={type} value={type}>{typeMap[type] || type}</option>
                 ))}
               </select>
@@ -248,7 +825,7 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
                 className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="all">All Categories</option>
-                {Array.from(new Set(myProjects.map(p => p.projectCategoryCode))).map(category => (
+                {Array.from(new Set(myProjects.map(p => p.projectCategoryCode).filter(Boolean))).map(category => (
                   <option key={category} value={category}>{categoryMap[category] || category}</option>
                 ))}
               </select>
@@ -323,16 +900,6 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
                   <button 
                     onClick={(e) => {
                       e.stopPropagation();
-                      setSelectedProject(project.missionProjectCode);
-                    }}
-                    className="flex-1 px-3 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors text-sm font-medium flex items-center justify-center gap-1"
-                  >
-                    <Eye className="w-4 h-4" />
-                    Details
-                  </button>
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
                       setEditingProjectCode(project.missionProjectCode);
                       setIsAddProjectModalOpen(true);
                     }}
@@ -340,6 +907,31 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
                   >
                     <Edit className="w-4 h-4" />
                     Edit
+                  </button>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedProject(project.missionProjectCode);
+                      setIsConfigurationPanelOpen(true);
+                      if (onCollapseSidebar) {
+                        onCollapseSidebar();
+                      }
+                    }}
+                    className="flex-1 px-3 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors text-sm font-medium flex items-center justify-center gap-1"
+                  >
+                    <Code className="w-4 h-4" />
+                    Configure
+                  </button>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedProject(project.missionProjectCode);
+                      setIsStatusUpdationModalOpen(true);
+                    }}
+                    className="flex-1 px-3 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-sm font-medium flex items-center justify-center gap-1"
+                  >
+                    <Zap className="w-4 h-4" />
+                    Status Update
                   </button>
                 </div>
               </div>
@@ -354,144 +946,398 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
           )}
         </div>
 
-        {/* Details Sidebar */}
-        <div className="space-y-4">
-          {selectedProjectData ? (
-            <>
-              {/* Project Details */}
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <h3 className="text-lg font-bold text-gray-900 mb-4">Project Details</h3>
-                <div className="space-y-3 text-sm">
-                  <div>
-                    <p className="text-gray-600">Project Code</p>
-                    <p className="font-mono text-gray-900 font-semibold">{selectedProjectData.missionProjectCode}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-600">Full Name</p>
-                    <p className="font-semibold text-gray-900">{selectedProjectData.missionProjectFullName}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-600">Budget Code</p>
-                    <p className="font-mono text-gray-900 font-semibold">{selectedProjectData.budgetCode}</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-600">Category</p>
-                    <p className="font-semibold text-gray-900">{categoryMap[selectedProjectData.projectCategoryCode] || selectedProjectData.projectCategoryCode}</p>
-                  </div>
-                  <div className="pt-3 border-t border-gray-200">
-                    <p className="text-gray-600">Sanctioned Cost</p>
-                    <p className="text-xl font-bold text-blue-600">₹{selectedProjectData.sanctionedCost}L</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-600">Status</p>
-                    <span className={`inline-block mt-1 px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(selectedProjectData.currentStatus)}`}>
-                      {getStatusLabel(selectedProjectData.currentStatus)}
-                    </span>
-                  </div>
-                </div>
+        {/* Project Configuration Matrix - Below Grid */}
+        {isConfigurationPanelOpen && selectedProjectData && (
+          <div className="mt-8 bg-white rounded-lg border border-gray-200 p-6 relative">
+            <button
+              onClick={() => setIsConfigurationPanelOpen(false)}
+              className="absolute top-4 right-4 p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Close configuration"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex items-center justify-between mb-6 pr-10">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Project Configuration</h2>
+                <p className="text-gray-600 mt-1">{selectedProjectData.missionProjectFullName}</p>
               </div>
-
-            
-
-              {/* Project Phases */}
-              <ProjectPhasesPanel 
-                projectId={selectedProject ? parseInt(selectedProject) : 0} 
-                isOpen={true}
-                refreshKey={phasesRefreshKey}
-                onEditPhase={(phaseId) => {
-                  setEditingPhaseId(phaseId);
-                  setIsAddPhaseModalOpen(true);
-                }}
-              />
-            </>
-          ) : (
-            <div className="bg-gray-50 rounded-lg border border-gray-200 p-6 text-center">
-              <AlertCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-600 text-sm">Select a project to view details</p>
-            </div>
-          )}
-
-          {/* Action Buttons */}
-          {selectedProjectData && (
-            <div className="space-y-2">
-              <button 
+              <button
                 onClick={() => {
-                  setEditingPhaseId(null);
-                  setIsAddPhaseModalOpen(true);
+                  handleAddNewPhase();
                 }}
-                className="w-full px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium flex items-center justify-center gap-2"
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium flex items-center gap-2"
               >
                 <Plus className="w-4 h-4" />
                 Add Phase
               </button>
-              <button 
-                onClick={() => setIsStatusUpdationModalOpen(true)}
-                className="w-full px-4 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors font-medium flex items-center justify-center gap-2"
+            </div>
+
+            {/* Phase Selection Modal */}
+            {isPhaseSelectionOpen && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4">
+                  <div className="border-b border-gray-200 p-6 flex items-center justify-between">
+                    <h3 className="text-xl font-bold text-gray-900">Select Phase</h3>
+                    <button
+                      onClick={() => setIsPhaseSelectionOpen(false)}
+                      className="text-gray-500 hover:text-gray-700"
+                    >
+                      <X className="w-6 h-6" />
+                    </button>
+                  </div>
+                  <div className="p-6">
+                    {optionsLoading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="w-6 h-6 text-blue-600 animate-spin mr-2" />
+                        <p className="text-gray-600">Loading phases...</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {phaseOptions.map(phase => {
+                          const isPhaseSelected = phases.some(p => p.name === phase.projectPhaseFullName);
+                          return (
+                            <button
+                              key={phase.projectPhaseCode}
+                              onClick={() => !isPhaseSelected && handlePhaseSelected(phase.projectPhaseCode)}
+                              disabled={isPhaseSelected}
+                              className={`w-full text-left px-4 py-3 border rounded-lg transition-colors font-medium ${
+                                isPhaseSelected 
+                                  ? 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed' 
+                                  : 'bg-gray-50 hover:bg-blue-50 border-gray-200 text-gray-900 hover:border-blue-300'
+                              }`}
+                              title={isPhaseSelected ? 'This phase is already added to the project' : ''}
+                            >
+                              {phase.projectPhaseFullName}
+                              {isPhaseSelected && <span className="ml-2 text-xs text-gray-500">(Already Added)</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Milestone Configuration Modal */}
+            {isMilestoneConfigOpen && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4">
+                  <div className="border-b border-gray-200 p-6 flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xl font-bold text-gray-900">Add Milestone</h3>
+                      <p className="text-sm text-gray-500 mt-1">Configure milestone details for {phaseOptions.find(p => p.projectPhaseCode === selectedPhaseForMilestone)?.projectPhaseFullName}</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setIsMilestoneConfigOpen(false);
+                        setSelectedPhaseForMilestone('');
+                        setMilestoneForm({ milestoneCode: '', startDate: '', endDate: '' });
+                        setValidationErrors([]);
+                      }}
+                      className="text-gray-500 hover:text-gray-700"
+                    >
+                      <X className="w-6 h-6" />
+                    </button>
+                  </div>
+                  
+                  <div className="p-6 space-y-6">
+                    {/* Validation Errors */}
+                    {validationErrors.length > 0 && (
+                      <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                        <div className="flex items-start gap-3">
+                          <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                          <div className="flex-1">
+                            <h4 className="font-semibold text-red-900 mb-2">Validation Errors</h4>
+                            <ul className="space-y-1">
+                              {validationErrors.map((error, idx) => (
+                                <li key={idx} className="text-sm text-red-700">• {error}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Milestone Form */}
+                    <div className="border border-gray-200 rounded-lg p-5 bg-blue-50">
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Select Milestone</label>
+                          <select
+                            value={milestoneForm.milestoneCode}
+                            onChange={(e) => setMilestoneForm({ ...milestoneForm, milestoneCode: e.target.value })}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+                          >
+                            <option value="">Choose a milestone...</option>
+                            {milestoneOptions.map(milestone => (
+                              <option key={milestone.projectMilestoneCode} value={milestone.projectMilestoneCode}>
+                                {milestone.projectMilestoneFullName}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">Start Date</label>
+                            <input
+                              type="date"
+                              value={milestoneForm.startDate}
+                              onChange={(e) => setMilestoneForm({ ...milestoneForm, startDate: e.target.value })}
+                              min={selectedProjectData?.dateOffs}
+                              max={selectedProjectData?.originalSchedule}
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              title={`Valid range: ${selectedProjectData?.dateOffs} to ${selectedProjectData?.originalSchedule}`}
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">End Date</label>
+                            <input
+                              type="date"
+                              value={milestoneForm.endDate}
+                              onChange={(e) => setMilestoneForm({ ...milestoneForm, endDate: e.target.value })}
+                              min={selectedProjectData?.dateOffs}
+                              max={selectedProjectData?.originalSchedule}
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              title={`Valid range: ${selectedProjectData?.dateOffs} to ${selectedProjectData?.originalSchedule}`}
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">Duration (Months)</label>
+                            <input
+                              type="number"
+                              value={calculateMonths(milestoneForm.startDate, milestoneForm.endDate)}
+                              disabled
+                              className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-600 font-semibold"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Form Actions */}
+                    <div className="flex gap-3">
+                      <button
+                        onClick={handleAddMilestoneToModal}
+                        className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Add Milestone
+                      </button>
+                      <button
+                        onClick={() => {
+                          setIsMilestoneConfigOpen(false);
+                          setSelectedPhaseForMilestone('');
+                          setMilestoneForm({ milestoneCode: '', startDate: '', endDate: '' });
+                          setValidationErrors([]);
+                        }}
+                        className="flex-1 px-4 py-3 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg font-semibold transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {configError && (
+              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-semibold text-red-900">Error Loading Configuration</h4>
+                  <p className="text-sm text-red-700 mt-1">{configError}</p>
+                </div>
+              </div>
+            )}
+
+            {configLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="text-center">
+                  <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto mb-3" />
+                  <p className="text-gray-600">Loading configuration data...</p>
+                </div>
+              </div>
+            ) : (
+              <ProjectMatrix
+                phases={phases}
+                onEditPhase={handleUpdatePhase}
+                onDeletePhase={handleDeletePhase}
+                onAddActivity={handleAddActivity}
+                onDeleteActivity={handleDeleteActivity}
+                onUpdateActivitySort={handleUpdateActivitySort}
+                onUpdateMilestoneSort={handleUpdateMilestoneSort}
+                onDeleteMilestone={handleDeleteMilestone}
+                onEditActivity={handleEditActivityOpen}
+                milestoneOptions={milestoneOptions}
+                activityOptions={activityOptions}
+                projectStartDate={selectedProjectData?.dateOffs}
+                projectEndDate={selectedProjectData?.originalSchedule}
+                onAddMilestoneClick={(phaseId) => {
+                  setSelectedPhaseForMilestone(phaseId);
+                  setMilestoneForm({ milestoneCode: '', startDate: '', endDate: '' });
+                  setValidationErrors([]);
+                  setIsMilestoneConfigOpen(true);
+                }}
+              />
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Add Phase Modal */}
+      <AddPhaseModal
+        projectId={selectedProject ? parseInt(selectedProject) : 0}
+        phaseId={editingPhaseId || undefined}
+        isOpen={isAddPhaseModalOpen}
+        onClose={() => {
+          setIsAddPhaseModalOpen(false);
+          setEditingPhaseId(null);
+        }}
+        onSuccess={() => {
+          // Refresh phases by incrementing the refresh key
+          setPhasesRefreshKey(prev => prev + 1);
+          // Clear edit state
+          setEditingPhaseId(null);
+          // Refetch projects
+          projectDetailService.getAllProjectDetails()
+            .then(projects => setMyProjects(projects || []))
+            .catch(err => console.error('Failed to refetch projects:', err));
+        }}
+      />
+
+      {/* Add/Edit Project Definition Modal */}
+      <AddProjectDefinitionModal
+        isOpen={isAddProjectModalOpen}
+        projectCode={editingProjectCode || undefined}
+        onClose={() => {
+          setIsAddProjectModalOpen(false);
+          setEditingProjectCode(null);
+        }}
+        onSuccess={() => {
+          // Refetch project definitions
+          projectDetailService.getAllProjectDetails()
+            .then(projects => setMyProjects(projects || []))
+            .catch(err => console.error('Failed to refetch projects:', err));
+        }}
+      />
+      {/* Status Updation Modal */}
+      {selectedProject && selectedProjectData && (
+        <StatusUpdationModal
+          isOpen={isStatusUpdationModalOpen}
+          projectId={parseInt(selectedProject) || 0}
+          onClose={() => setIsStatusUpdationModalOpen(false)}
+          onSuccess={() => {
+            // Refresh phases
+            setPhasesRefreshKey(prev => prev + 1);
+            // Refetch projects
+            projectDetailService.getAllProjectDetails()
+              .then(projects => setMyProjects(projects || []))
+              .catch(err => console.error('Failed to refetch projects:', err));
+          }}
+        />
+      )}
+
+      {/* Edit Activity Modal */}
+      {isActivityEditOpen && editingActivity && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4">
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+              <h2 className="text-xl font-black text-slate-900">Edit Activity</h2>
+              <button
+                onClick={() => {
+                  setIsActivityEditOpen(false);
+                  setEditingActivity(null);
+                }}
+                className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors"
               >
-                <Zap className="w-4 h-4" />
-                Status Updation
-              </button>
-              <button className="w-full px-4 py-3 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium">
-                Request Revision
+                <X className="w-5 h-5 text-slate-500" />
               </button>
             </div>
-          )}
 
-          {/* Add Phase Modal */}
-          <AddPhaseModal
-            projectId={selectedProject ? parseInt(selectedProject) : 0}
-            phaseId={editingPhaseId || undefined}
-            isOpen={isAddPhaseModalOpen}
-            onClose={() => {
-              setIsAddPhaseModalOpen(false);
-              setEditingPhaseId(null);
-            }}
-            onSuccess={() => {
-              // Refresh phases by incrementing the refresh key
-              setPhasesRefreshKey(prev => prev + 1);
-              // Clear edit state
-              setEditingPhaseId(null);
-              // Refetch projects
-              projectDetailService.getAllProjectDetails()
-                .then(projects => setMyProjects(projects || []))
-                .catch(err => console.error('Failed to refetch projects:', err));
-            }}
-          />
+            <div className="px-6 py-4 space-y-4">
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
+                  Activity Title
+                </label>
+                <select
+                  value={editActivityForm.title}
+                  onChange={(e) => setEditActivityForm(prev => ({ ...prev, title: e.target.value }))}
+                  className="w-full bg-white border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-xl px-4 py-2.5 text-sm transition-all outline-none font-medium text-slate-700"
+                >
+                  <option value="">Select Activity...</option>
+                  {activityOptions.map(a => (
+                    <option key={a.projectActivityCode} value={a.projectActivityFullName}>
+                      {a.projectActivityFullName}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-          {/* Add/Edit Project Definition Modal */}
-          <AddProjectDefinitionModal
-            isOpen={isAddProjectModalOpen}
-            projectCode={editingProjectCode || undefined}
-            onClose={() => {
-              setIsAddProjectModalOpen(false);
-              setEditingProjectCode(null);
-            }}
-            onSuccess={() => {
-              // Refetch project definitions
-              projectDetailService.getAllProjectDetails()
-                .then(projects => setMyProjects(projects || []))
-                .catch(err => console.error('Failed to refetch projects:', err));
-            }}
-          />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
+                    Start Date
+                  </label>
+                  <input
+                    type="date"
+                    value={editActivityForm.startDate}
+                    onChange={(e) => setEditActivityForm(prev => ({ ...prev, startDate: e.target.value }))}
+                    className="w-full bg-white border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-lg px-3 py-2 text-sm transition-all outline-none font-medium text-slate-700"
+                  />
+                </div>
 
-          {/* Status Updation Modal */}
-          {selectedProject && selectedProjectData && (
-            <StatusUpdationModal
-              isOpen={isStatusUpdationModalOpen}
-              projectId={parseInt(selectedProject) || 0}
-              onClose={() => setIsStatusUpdationModalOpen(false)}
-              onSuccess={() => {
-                // Refresh phases
-                setPhasesRefreshKey(prev => prev + 1);
-                // Refetch projects
-                projectDetailService.getAllProjectDetails()
-                  .then(projects => setMyProjects(projects || []))
-                  .catch(err => console.error('Failed to refetch projects:', err));
-              }}
-            />
-          )}
+                <div>
+                  <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
+                    End Date
+                  </label>
+                  <input
+                    type="date"
+                    value={editActivityForm.endDate}
+                    onChange={(e) => setEditActivityForm(prev => ({ ...prev, endDate: e.target.value }))}
+                    className="w-full bg-white border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-lg px-3 py-2 text-sm transition-all outline-none font-medium text-slate-700"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
+                  Activity Order
+                </label>
+                <input
+                  type="number"
+                  value={editActivityForm.sortOrder}
+                  onChange={(e) => setEditActivityForm(prev => ({ ...prev, sortOrder: parseInt(e.target.value) || 0 }))}
+                  className="w-full bg-white border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-lg px-3 py-2 text-sm transition-all outline-none font-medium text-slate-700"
+                  min="1"
+                  placeholder="Enter order number"
+                />
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-3">
+              <button
+                onClick={() => {
+                  setIsActivityEditOpen(false);
+                  setEditingActivity(null);
+                }}
+                className="px-4 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleUpdateActivity}
+                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors font-black uppercase text-[10px] tracking-widest"
+              >
+                Update Activity
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };

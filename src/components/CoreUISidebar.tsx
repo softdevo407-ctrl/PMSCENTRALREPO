@@ -81,12 +81,12 @@ const CoreUISidebar: React.FC<CoreUISidebarProps> = ({
     if (userRole === 'Project Director') {
       return [
         ...baseItems,
-        {
-          id: 'new-project',
-          label: 'New Project',
-          icon: <Plus className="w-5 h-5" />,
-          onClick: () => onNavigate('new-project'),
-        },
+        // {
+        //   id: 'new-project',
+        //   label: 'New Project',
+        //   icon: <Plus className="w-5 h-5" />,
+        //   onClick: () => onNavigate('new-project'),
+        // },
         {
           id: 'my-projects',
           label: 'My Projects',

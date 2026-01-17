@@ -11,7 +11,7 @@ public class ProgrammeType {
     @Column(name = "programmetypescode", length = 5)
     private String programmeTypeCode;
     
-    @Column(name = "projectcategorycode", length = 5, nullable = false)
+    @Column(name = "projectcategoriescode", length = 5, nullable = false)
     private String projectCategoryCode;
     
     @Column(name = "programmetypesfullname", length = 255, nullable = false)

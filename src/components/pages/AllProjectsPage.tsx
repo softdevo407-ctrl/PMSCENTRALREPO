@@ -1,15 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle, Clock, BarChart3, Loader2, Search, ArrowUpDown } from 'lucide-react';
-import { useAuth } from '../../hooks/useAuth';
 import { projectDetailService, ProjectDetailResponse } from '../../services/projectDetailService';
 
-interface AssignedProjectsPageProps {
+interface AllProjectsPageProps {
   userName: string;
-  onNavigate?: (page: string) => void;
+  onNavigate?: (page: string, projectCode?: string, additionalData?: any) => void;
 }
 
-export const AssignedProjectsPage: React.FC<AssignedProjectsPageProps> = ({ userName, onNavigate = (page: string, projectCode?: string, additionalData?: any) => {} }) => {
-  const { user } = useAuth();
+export const AllProjectsPage: React.FC<AllProjectsPageProps> = ({ userName, onNavigate = (page: string, projectCode?: string, additionalData?: any) => {} }) => {
   const [projects, setProjects] = useState<ProjectDetailResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -18,7 +16,7 @@ export const AssignedProjectsPage: React.FC<AssignedProjectsPageProps> = ({ user
   const [sortBy, setSortBy] = useState<string>('');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
-  // Fetch projects assigned to this programme director
+  // Fetch all projects for Chairman
   useEffect(() => {
     const fetchProjects = async () => {
       try {
@@ -26,25 +24,17 @@ export const AssignedProjectsPage: React.FC<AssignedProjectsPageProps> = ({ user
         setError(null);
         
         const allProjects = await projectDetailService.getAllProjectDetails();
-        
-        // Filter projects where current user is the programme director
-        const programmeProjects = allProjects.filter(p => 
-          p.programmeDirector === user?.employeeCode
-        );
-        
-        setProjects(programmeProjects);
+        setProjects(allProjects);
       } catch (err) {
         console.error('Error fetching projects:', err);
-        setError('Failed to load assigned projects');
+        setError('Failed to load projects');
       } finally {
         setLoading(false);
       }
     };
 
-    if (user?.employeeCode) {
-      fetchProjects();
-    }
-  }, [user?.employeeCode]);
+    fetchProjects();
+  }, []);
 
   // Calculate progress and map status
   const getProjectStatus = (project: ProjectDetailResponse) => {
@@ -114,8 +104,8 @@ export const AssignedProjectsPage: React.FC<AssignedProjectsPageProps> = ({ user
     <div className="space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Assigned Projects</h1>
-        <p className="text-gray-600 mt-2">Monitor all projects assigned to your programmes</p>
+        <h1 className="text-3xl font-bold text-gray-900">All Projects</h1>
+        <p className="text-gray-600 mt-2">Complete portfolio overview and management</p>
       </div>
 
       {/* Loading State */}
@@ -142,8 +132,8 @@ export const AssignedProjectsPage: React.FC<AssignedProjectsPageProps> = ({ user
       {/* No Projects State */}
       {!loading && projects.length === 0 && !error && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
-          <p className="text-blue-800 font-semibold text-lg">No assigned projects yet</p>
-          <p className="text-blue-600 text-sm mt-2">Projects will appear here once they are created and assigned to your programmes.</p>
+          <p className="text-blue-800 font-semibold text-lg">No projects found</p>
+          <p className="text-blue-600 text-sm mt-2">Projects will appear here once they are created.</p>
         </div>
       )}
 
@@ -184,7 +174,7 @@ export const AssignedProjectsPage: React.FC<AssignedProjectsPageProps> = ({ user
       {!loading && (
         <div className="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
           <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
-            <h3 className="text-2xl font-bold text-gray-900">All Assigned Projects</h3>
+            <h3 className="text-2xl font-bold text-gray-900">All Projects</h3>
             <p className="text-sm text-gray-600 mt-1">Total: {filteredProjects.length} project{filteredProjects.length !== 1 ? 's' : ''}</p>
           </div>
           {filteredProjects.length === 0 ? (
@@ -203,11 +193,11 @@ export const AssignedProjectsPage: React.FC<AssignedProjectsPageProps> = ({ user
                     <th onClick={() => handleSort('name')} className="px-6 py-4 text-left text-sm font-bold text-gray-700 cursor-pointer hover:bg-gray-100 transition-colors">
                       <div className="flex items-center gap-2">Project Name <ArrowUpDown className="w-4 h-4 opacity-0 group-hover:opacity-100" /></div>
                     </th>
+                    <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Director</th>
                     <th onClick={() => handleSort('status')} className="px-6 py-4 text-left text-sm font-bold text-gray-700 cursor-pointer hover:bg-gray-100 transition-colors">Status</th>
                     <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Progress</th>
                     <th onClick={() => handleSort('budget')} className="px-6 py-4 text-left text-sm font-bold text-gray-700 cursor-pointer hover:bg-gray-100 transition-colors">Budget</th>
                     <th onClick={() => handleSort('endDate')} className="px-6 py-4 text-left text-sm font-bold text-gray-700 cursor-pointer hover:bg-gray-100 transition-colors">End Date</th>
-                    <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Director</th>
                     <th className="px-6 py-4 text-left text-sm font-bold text-gray-700">Action</th>
                   </tr>
                 </thead>
@@ -238,6 +228,9 @@ export const AssignedProjectsPage: React.FC<AssignedProjectsPageProps> = ({ user
                             <p className="text-xs text-gray-500 mt-1">{project.missionProjectShortName}</p>
                           </div>
                         </td>
+                        <td className="px-6 py-4 text-sm text-gray-600 font-medium">
+                          {project.missionProjectDirector || 'N/A'}
+                        </td>
                         <td className="px-6 py-4">
                           <span className={`px-3 py-1 rounded-full text-xs font-bold ${statusColor}`}>
                             {statusDisplay}
@@ -260,12 +253,9 @@ export const AssignedProjectsPage: React.FC<AssignedProjectsPageProps> = ({ user
                         <td className="px-6 py-4 text-sm text-gray-600 font-medium">
                           {new Date(project.originalSchedule).toLocaleDateString('en-IN')}
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-600">
-                          {project.missionProjectDirector || 'N/A'}
-                        </td>
                         <td className="px-6 py-4">
                           <button
-                            onClick={() => onNavigate('monitoring', project.missionProjectCode, { project })}
+                            onClick={() => onNavigate('oversight', project.missionProjectCode, { project })}
                             className="text-blue-600 hover:text-blue-800 hover:bg-blue-50 font-bold text-sm px-3 py-1 rounded transition-all"
                           >
                             Review
@@ -278,29 +268,6 @@ export const AssignedProjectsPage: React.FC<AssignedProjectsPageProps> = ({ user
               </table>
             </div>
           )}
-        </div>
-      )}
-
-      {/* Quick Actions */}
-      {!loading && projects.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <button
-            onClick={() => onNavigate('monitoring')}
-            className="p-6 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border-2 border-blue-200 hover:shadow-lg hover:border-blue-400 transition-all text-left group"
-          >
-            <BarChart3 className="w-8 h-8 text-blue-600 mb-3 group-hover:scale-110 transition-transform" />
-            <h4 className="font-bold text-gray-900 mb-1">Project Monitoring</h4>
-            <p className="text-sm text-gray-600">Real-time progress tracking</p>
-          </button>
-
-          <button
-            onClick={() => onNavigate('approvals')}
-            className="p-6 bg-gradient-to-br from-emerald-50 to-emerald-100 rounded-lg border-2 border-emerald-200 hover:shadow-lg hover:border-emerald-400 transition-all text-left group"
-          >
-            <CheckCircle className="w-8 h-8 text-emerald-600 mb-3 group-hover:scale-110 transition-transform" />
-            <h4 className="font-bold text-gray-900 mb-1">Review Approvals</h4>
-            <p className="text-sm text-gray-600">Pending revision requests</p>
-          </button>
         </div>
       )}
     </div>

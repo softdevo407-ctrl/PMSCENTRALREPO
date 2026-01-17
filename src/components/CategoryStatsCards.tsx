@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, AlertCircle, CheckCircle, AlertTriangle, Award, Loader2 } from 'lucide-react';
-import { projectService } from '../services/projectService';
 import { ProjectCategoryService } from '../services/projectCategoryService';
 import { categoryStatsService } from '../services/categoryStatsService';
 
@@ -74,14 +73,16 @@ export const CategoryStatsCards: React.FC<CategoryStatsCardsProps> = ({ onNaviga
       });
       setCategories(categoryMap);
       
-      // Fetch stats - use director-specific if employeeCode provided, otherwise global
+      // Fetch stats - use categoryStatsService for both director-specific and global/chairman stats
       let data;
-      if (employeeCode) {
+      if (employeeCode && employeeCode !== 'CHAIRMAN') {
         console.log('Fetching category stats for employee code:', employeeCode);
         data = await categoryStatsService.getCategoryStatsByDirector(employeeCode);
         console.log('Category Stats by Director (raw):', data);
       } else {
-        data = await projectService.getCategoryStats();
+        // For CHAIRMAN role, fetch global stats for all categories
+        console.log('Fetching global category stats for CHAIRMAN role');
+        data = await categoryStatsService.getCategoryStats();
         console.log('Category Stats (Global):', data);
       }
       
@@ -130,34 +131,10 @@ export const CategoryStatsCards: React.FC<CategoryStatsCardsProps> = ({ onNaviga
     return Math.round((stat[status] / stat.total) * 100);
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-8 gap-2">
-        <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
-        <p className="text-gray-600">Loading categories...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3">
-        <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
-        <div>
-          <h3 className="text-sm font-medium text-red-800">Error loading categories</h3>
-          <p className="text-sm text-red-700">{error}</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (stats.length === 0) {
-    return (
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center gap-3">
-        <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0" />
-        <p className="text-blue-700">No categories configured yet.</p>
-      </div>
-    );
+  // Don't show loading, error, or empty states - render nothing if no categories exist
+  // This component is optional and will gracefully hide when categories aren't available
+  if (loading || error || stats.length === 0) {
+    return null;
   }
 
   return (

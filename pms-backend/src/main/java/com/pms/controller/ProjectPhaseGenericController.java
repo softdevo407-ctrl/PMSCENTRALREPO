@@ -12,6 +12,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/project-phases-generic")
+@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:3000"}, allowCredentials = "true")
 public class ProjectPhaseGenericController {
     
     @Autowired
@@ -43,7 +44,7 @@ public class ProjectPhaseGenericController {
         try {
             return ResponseEntity.status(HttpStatus.CREATED).body(projectPhaseGenericService.createProjectPhase(request));
         } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(null);
         }
     }
     
