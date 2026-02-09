@@ -5,6 +5,10 @@ export interface LoginRequest {
   password: string;
 }
 
+export interface CASLoginRequest {
+  employeeCode: string;
+}
+
 export interface SignupRequest {
   fullName: string;
   employeeCode: string;
@@ -84,6 +88,61 @@ class AuthService {
       return {
         success: false,
         message: error instanceof Error ? error.message : "Login failed",
+        token: "",
+        userId: 0,
+        employeeCode: "",
+        fullName: "",
+        role: "",
+        assignedProgrammeId: null,
+      };
+    }
+  }
+
+  async loginWithCAS(employeeCode: string): Promise<AuthResponse> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/login-cas`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ employeeCode }),
+      });
+
+      if (!response.ok) {
+        const text = await response.text();
+        console.error("CAS Login failed:", text);
+        return {
+          success: false,
+          message: "CAS Login failed: " + response.statusText,
+          token: "",
+          userId: 0,
+          employeeCode: "",
+          fullName: "",
+          role: "",
+          assignedProgrammeId: null,
+        };
+      }
+
+      const data = await response.json();
+
+      if (data.success && data.token) {
+        this.setToken(data.token);
+        this.setUserInfo({
+          id: data.userId,
+          employeeCode: data.employeeCode,
+          fullName: data.fullName,
+          role: data.role,
+          token: data.token,
+          assignedProgrammeId: data.assignedProgrammeId,
+        });
+      }
+
+      return data;
+    } catch (error) {
+      console.error("CAS Login error:", error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : "CAS Login failed",
         token: "",
         userId: 0,
         employeeCode: "",

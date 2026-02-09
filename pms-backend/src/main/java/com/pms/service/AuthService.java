@@ -145,4 +145,57 @@ public class AuthService {
                     .build();
         }
     }
+
+    public AuthResponse loginWithCAS(String employeeCode) {
+        try {
+            log.info("Attempting CAS authentication for employee code: {}", employeeCode);
+            
+            // Find user by employee code
+            User user = userRepository.findByEmployeeCode(employeeCode)
+                    .orElseThrow(() -> new RuntimeException("User not found. Please contact administrator."));
+            
+            // Check if user is active
+            if (!user.isActive()) {
+                log.warn("Attempt to login with inactive user: {}", employeeCode);
+                return AuthResponse.builder()
+                        .success(false)
+                        .message("User account is inactive")
+                        .token("")
+                        .userId(0L)
+                        .employeeCode("")
+                        .fullName("")
+                        .role("")
+                        .build();
+            }
+
+            log.info("CAS authentication successful for: {}", employeeCode);
+            
+            // Generate token without password validation (CAS already validated user)
+            String token = jwtUtil.generateTokenFromEmployeeCode(employeeCode);
+
+            log.info("User logged in successfully via CAS: {}", user.getEmployeeCode());
+
+            return AuthResponse.builder()
+                    .token(token)
+                    .userId(user.getId())
+                    .employeeCode(user.getEmployeeCode())
+                    .fullName(user.getFullName())
+                    .role(user.getRole().getName())
+                    .assignedProgrammeId(user.getAssignedProgrammeId())
+                    .success(true)
+                    .message("CAS Login successful")
+                    .build();
+        } catch (Exception ex) {
+            log.error("CAS Login failed for employee code {}: {}", employeeCode, ex.getMessage(), ex);
+            return AuthResponse.builder()
+                    .success(false)
+                    .message(ex.getMessage() != null ? ex.getMessage() : "CAS login failed. Please try again.")
+                    .token("")
+                    .userId(0L)
+                    .employeeCode("")
+                    .fullName("")
+                    .role("")
+                    .build();
+        }
+    }
 }

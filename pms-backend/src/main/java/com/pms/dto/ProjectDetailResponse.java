@@ -42,4 +42,9 @@ public class ProjectDetailResponse {
     private String userId;
     private String regStatus;
     private LocalDateTime regTime;
+    private String costOverrunApproval;
+    private BigDecimal revisedSanctionedCost;
+    private String timeOverrunApproval;
+    private LocalDate revisedDateOffs;
+    private LocalDate revisedCompletionDate;
 }

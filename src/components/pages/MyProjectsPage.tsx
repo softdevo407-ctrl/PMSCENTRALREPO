@@ -15,6 +15,7 @@ import { ProjectPhasesPanel } from '../ProjectPhasesPanel';
 import { AddProjectDefinitionModal } from '../AddProjectDefinitionModal';
 import { StatusUpdationModal } from '../StatusUpdationModal';
 import ProjectMatrix from '../ProjectConfigurationMatrix';
+import CoreUISearchableSelect from '../CoreUISearchableSelect';
 import type { ProjectPhase, Activity, ActivityFormData } from '../ProjectConfigurationMatrix';
 
 interface MyProjectsPageProps {
@@ -70,6 +71,10 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
   const [isActivityEditOpen, setIsActivityEditOpen] = useState(false);
   const [editingActivity, setEditingActivity] = useState<{ phaseId: string; milestoneId: string; activityId: string } | null>(null);
   const [editActivityForm, setEditActivityForm] = useState<ActivityFormData>({ title: '', startDate: '', endDate: '', sortOrder: 0 });
+  const [phaseNameMap, setPhaseNameMap] = useState<{ [key: string]: string }>({});
+  const [milestoneNameMap, setMilestoneNameMap] = useState<{ [key: string]: string }>({});
+  const [activityNameMap, setActivityNameMap] = useState<{ [key: string]: string }>({});
+  const [configSearchTerm, setConfigSearchTerm] = useState<string>('');
 
   // Fetch projects for current user
   useEffect(() => {
@@ -79,7 +84,16 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
         setError(null);
         
         // Fetch projects where current user is project director or programme director
-        const myProjectsData = await projectDetailService.getMyProjects();
+        let myProjectsData: ProjectDetailResponse[] = [];
+        
+        if (user?.employeeCode) {
+          console.log('Fetching projects for director:', user.employeeCode);
+          myProjectsData = await projectDetailService.getProjectDetailsByDirector(user.employeeCode);
+        } else {
+          console.log('No employee code, trying getMyProjects');
+          myProjectsData = await projectDetailService.getMyProjects();
+        }
+        
         setMyProjects(myProjectsData || []);
         
         // Fetch all status codes and build map
@@ -108,13 +122,14 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : 'Failed to fetch projects';
         setError(errorMsg);
+        console.error('Error fetching projects:', err);
       } finally {
         setLoading(false);
       }
     };
 
     fetchProjects();
-  }, [user?.id]);
+  }, [user?.id, user?.employeeCode]);
 
   // Load existing project schedule data when configuration panel opens
   useEffect(() => {
@@ -128,9 +143,37 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
         setConfigLoading(true);
         setConfigError(null);
         
+        // Load API options first to build name maps
+        const [phases, milestones, activities] = await Promise.all([
+          ProjectPhaseGenericService.getAllPhases(),
+          ProjectMilestoneService.getAllMilestones(),
+          ProjectActivityService.getAllProjectActivities()
+        ]);
+        
+        // Build name maps
+        const phaseMap: { [key: string]: string } = {};
+        const milestoneMap: { [key: string]: string } = {};
+        const activityMap: { [key: string]: string } = {};
+        
+        phases.forEach(p => {
+          phaseMap[p.projectPhaseCode] = p.projectPhaseFullName;
+        });
+        
+        milestones.forEach(m => {
+          milestoneMap[m.projectMilestoneCode] = m.projectMilestoneFullName;
+        });
+        
+        activities.forEach(a => {
+          activityMap[a.projectActivityCode] = a.projectActivityFullName;
+        });
+        
+        setPhaseNameMap(phaseMap);
+        setMilestoneNameMap(milestoneMap);
+        setActivityNameMap(activityMap);
+        
         // Fetch existing schedules from database
         const schedules = await ProjectScheduleService.getSchedulesByProjectCode(selectedProject);
-        
+        console.log('schedules loaded:', schedules);
         if (!schedules || schedules.length === 0) {
           setPhases([]);
           return;
@@ -149,7 +192,7 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
             if (!phasesMap.has(scheduleCode)) {
               phasesMap.set(scheduleCode, {
                 id: scheduleCode,
-                name: scheduleCode, // You might want to use a better name from a lookup
+                name: phaseMap[scheduleCode] || scheduleCode, // Use name from API map
                 milestones: [],
                 sortOrder: schedule.hierarchyOrder || 1
               });
@@ -160,7 +203,7 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
             if (!phasesMap.has(phaseCode)) {
               phasesMap.set(phaseCode, {
                 id: phaseCode,
-                name: phaseCode,
+                name: phaseMap[phaseCode] || phaseCode,
                 milestones: [],
                 sortOrder: 1
               });
@@ -171,7 +214,7 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
               phase.milestones.push({
                 id: scheduleCode,
                 code: scheduleCode,
-                title: scheduleCode,
+                title: milestoneMap[scheduleCode] || scheduleCode, // Use name from API map
                 startDate: schedule.scheduleStartDate || '',
                 endDate: schedule.scheduleEndDate || '',
                 months: 0,
@@ -212,7 +255,7 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
               foundMilestone = {
                 id: parentCode,
                 code: parentCode,
-                title: parentCode,
+                title: milestoneMap[parentCode] || parentCode,
                 startDate: '',
                 endDate: '',
                 months: 0,
@@ -226,7 +269,7 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
             if (!foundMilestone.activities.find((a: Activity) => a.id === scheduleCode)) {
               foundMilestone.activities.push({
                 id: scheduleCode,
-                title: scheduleCode,
+                title: activityMap[scheduleCode] || scheduleCode, // Use name from API map
                 startDate: schedule.scheduleStartDate || '',
                 endDate: schedule.scheduleEndDate || '',
                 sortOrder: schedule.hierarchyOrder || 1
@@ -259,14 +302,37 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
     return matchStatus && matchType && matchCategory;
   });
 
+  // Determine if project is delayed using schedule date
+  const isProjectDelayed = (project: ProjectDetailResponse) => {
+    try {
+      // If timeOverrunApproval = 'YES' and revisedCompletionDate exists, use that instead
+      const scheduleToCheck = project.timeOverrunApproval === 'YES' && project.revisedCompletionDate 
+        ? project.revisedCompletionDate 
+        : project.originalSchedule;
+      
+      if (scheduleToCheck) {
+        const sched = new Date(scheduleToCheck);
+        if (!isNaN(sched.getTime())) {
+          const now = new Date();
+          return sched.getTime() < now.getTime();
+        }
+      }
+    } catch (e) {
+      // ignore parse errors and fall back
+    }
+
+    // fallback: if durationInMonths > 0 treat as delayed (legacy behavior)
+    return (project.durationInMonths || 0) > 0;
+  };
+
   const totalBudget = myProjects.reduce((sum, p) => {
     return sum + (p.sanctionedCost || 0);
   }, 0);
   
   const statusCounts = {
-    onTrack: myProjects.filter(p => p.currentStatus === 'ON_TRACK').length,
-    atRisk: myProjects.filter(p => p.currentStatus === 'AT_RISK').length,
-    delayed: myProjects.filter(p => p.currentStatus === 'DELAYED').length,
+    onTrack: myProjects.filter(p => !isProjectDelayed(p)).length,
+    atRisk: 0,
+    delayed: myProjects.filter(p => isProjectDelayed(p)).length,
   };
 
   const selectedProjectData = myProjects.find(p => p.missionProjectCode === selectedProject);
@@ -767,7 +833,7 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
       </div>
 
       {/* Portfolio Overview Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      {/* <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm hover:shadow-md transition-shadow">
           <p className="text-sm text-gray-600 uppercase tracking-wide font-semibold">Total Projects</p>
           <p className="text-3xl font-bold text-gray-900 mt-2">{myProjects.length}</p>
@@ -779,58 +845,66 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
           <p className="text-xs text-gray-500 mt-2">Performing well</p>
         </div>
         <div className="bg-white rounded-lg border border-orange-200 p-6 shadow-sm hover:shadow-md transition-shadow">
-          <p className="text-sm text-orange-600 uppercase tracking-wide font-semibold">At Risk</p>
-          <p className="text-3xl font-bold text-orange-600 mt-2">{statusCounts.atRisk}</p>
+          <p className="text-sm text-orange-600 uppercase tracking-wide font-semibold">Delayed</p>
+          <p className="text-3xl font-bold text-orange-600 mt-2">{statusCounts.delayed}</p>
           <p className="text-xs text-gray-500 mt-2">Needs attention</p>
         </div>
         <div className="bg-white rounded-lg border border-blue-200 p-6 shadow-sm hover:shadow-md transition-shadow">
           <p className="text-sm text-blue-600 uppercase tracking-wide font-semibold">Total Budget</p>
-          <p className="text-3xl font-bold text-blue-600 mt-2">₹{(totalBudget / 10000000).toFixed(1)}Cr</p>
+          <p className="text-3xl font-bold text-blue-600 mt-2">₹{totalBudget.toFixed(2)}Cr</p>
           <p className="text-xs text-gray-500 mt-2">Portfolio-wide</p>
         </div>
-      </div>
+      </div> */}
 
       <div className="grid grid-cols-1 gap-6">
         {/* Projects List - Full Width */}
         <div>
           {/* Filters */}
-          <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4 space-y-3">
+          {/* <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4 space-y-3">
             <div className="flex items-center gap-3 flex-wrap">
               <Filter className="w-5 h-5 text-gray-500" />
-              <select
+              <CoreUISearchableSelect
+                label=""
+                placeholder="Select Status..."
+                options={[
+                  { value: 'all', label: 'All Status' },
+                  { value: 'ON_TRACK', label: 'On Track' },
+                  { value: 'AT_RISK', label: 'At Risk' },
+                  { value: 'DELAYED', label: 'Delayed' },
+                  { value: 'COMPLETED', label: 'Completed' },
+                  { value: 'ON_HOLD', label: 'On Hold' }
+                ]}
                 value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="all">All Status</option>
-                <option value="ON_TRACK">On Track</option>
-                <option value="AT_RISK">At Risk</option>
-                <option value="DELAYED">Delayed</option>
-                <option value="COMPLETED">Completed</option>
-                <option value="ON_HOLD">On Hold</option>
-              </select>
-              <select
+                onChange={(value) => setFilterStatus(value as string)}
+              />
+              <CoreUISearchableSelect
+                label=""
+                placeholder="Select Programme Type..."
+                options={[
+                  { value: 'all', label: 'All Programme Types' },
+                  ...Array.from(new Set(myProjects.map(p => p.projectTypesCode).filter(Boolean))).map(type => ({
+                    value: type,
+                    label: typeMap[type] || type
+                  }))
+                ]}
                 value={filterType}
-                onChange={(e) => setFilterType(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="all">All Programme Types</option>
-                {Array.from(new Set(myProjects.map(p => p.projectTypesCode).filter(Boolean))).map(type => (
-                  <option key={type} value={type}>{typeMap[type] || type}</option>
-                ))}
-              </select>
-              <select
+                onChange={(value) => setFilterType(value as string)}
+              />
+              <CoreUISearchableSelect
+                label=""
+                placeholder="Select Category..."
+                options={[
+                  { value: 'all', label: 'All Categories' },
+                  ...Array.from(new Set(myProjects.map(p => p.projectCategoryCode).filter(Boolean))).map(category => ({
+                    value: category,
+                    label: categoryMap[category] || category
+                  }))
+                ]}
                 value={filterCategory}
-                onChange={(e) => setFilterCategory(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="all">All Categories</option>
-                {Array.from(new Set(myProjects.map(p => p.projectCategoryCode).filter(Boolean))).map(category => (
-                  <option key={category} value={category}>{categoryMap[category] || category}</option>
-                ))}
-              </select>
+                onChange={(value) => setFilterCategory(value as string)}
+              />
             </div>
-          </div>
+          </div> */}
 
           {/* Projects Grid */}
           <div className="grid grid-cols-1 gap-4">
@@ -860,21 +934,21 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
                       <DollarSign className="w-4 h-4 text-blue-600" />
                       <p className="text-xs text-gray-500 titlecase tracking-wide">Sanctioned Cost</p>
                     </div>
-                    <p className="text-lg font-bold text-gray-900">₹{project.sanctionedCost}L</p>
+                    <p className="text-lg font-bold text-gray-900">₹{project.sanctionedCost}Cr</p>
                   </div>
                   <div>
                     <div className="flex items-center gap-1 mb-1">
                       <TrendingDown className="w-4 h-4 text-green-600" />
                       <p className="text-xs text-gray-500 titlecase tracking-wide">Expenditure Till Date</p>
                     </div>
-                    <p className="text-lg font-bold text-green-600">₹{project.cumExpUpToPrevFy}L</p>
+                    <p className="text-lg font-bold text-green-600">₹{project.cumExpUpToPrevFy}Cr</p>
                   </div>
                   <div>
                     <div className="flex items-center gap-1 mb-1">
                       <TrendingUp className="w-4 h-4 text-orange-600" />
                       <p className="text-xs text-gray-500 titlecase tracking-wide">Current Year Exp</p>
                     </div>
-                    <p className="text-lg font-bold text-orange-600">₹0L</p>
+                    <p className="text-lg font-bold text-orange-600">₹{project.curYrExp}Cr</p>
                   </div>
                 </div>
 
@@ -882,16 +956,34 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
                   <div>
                     <div className="flex items-center gap-1 mb-1">
                       <Calendar className="w-4 h-4 text-purple-600" />
-                      <p className="text-xs text-gray-500 titlecase tracking-wide">Sanctioned Date</p>
+                      <p className="text-xs text-gray-500 titlecase tracking-wide">
+                        {project.costOverrunApproval === 'YES' ? 'Revised Sanctioned Cost' : 'Sanctioned Date'}
+                      </p>
+                      {project.costOverrunApproval === 'YES' && (
+                        <AlertCircle className="w-3 h-3 text-red-600" title="Cost overrun approved" />
+                      )}
                     </div>
-                    <p className="text-sm font-bold text-gray-900">{project.dateOffs ? new Date(project.dateOffs).toLocaleDateString() : '-'}</p>
+                    <p className="text-sm font-bold text-gray-900">
+                      {project.costOverrunApproval === 'YES' && project.revisedSanctionedCost 
+                        ? `₹${project.revisedSanctionedCost}Cr` 
+                        : (project.dateOffs ? new Date(project.dateOffs).toLocaleDateString() : '-')}
+                    </p>
                   </div>
                   <div>
                     <div className="flex items-center gap-1 mb-1">
                       <Clock className="w-4 h-4 text-orange-600" />
-                      <p className="text-xs text-gray-500 titlecase tracking-wide">Schedule</p>
+                      <p className="text-xs text-gray-500 titlecase tracking-wide">
+                        {project.timeOverrunApproval === 'YES' ? 'Revised Schedule' : 'Schedule'}
+                      </p>
+                      {project.timeOverrunApproval === 'YES' && (
+                        <AlertCircle className="w-3 h-3 text-red-600" title="Time overrun approved" />
+                      )}
                     </div>
-                    <p className="text-sm font-bold text-gray-900">{project.originalSchedule ? new Date(project.originalSchedule).toLocaleDateString() : '-'}</p>
+                    <p className="text-sm font-bold text-gray-900">
+                      {project.timeOverrunApproval === 'YES' && project.revisedCompletionDate 
+                        ? new Date(project.revisedCompletionDate).toLocaleDateString() 
+                        : (project.originalSchedule ? new Date(project.originalSchedule).toLocaleDateString() : '-')}
+                    </p>
                   </div>
                 </div>
 
@@ -913,9 +1005,17 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
                       e.stopPropagation();
                       setSelectedProject(project.missionProjectCode);
                       setIsConfigurationPanelOpen(true);
+                      setConfigSearchTerm(''); // Reset search
                       if (onCollapseSidebar) {
                         onCollapseSidebar();
                       }
+                      // Auto-scroll to configuration panel after a brief delay
+                      setTimeout(() => {
+                        const configPanel = document.getElementById('project-configuration-panel');
+                        if (configPanel) {
+                          configPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        }
+                      }, 100);
                     }}
                     className="flex-1 px-3 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors text-sm font-medium flex items-center justify-center gap-1"
                   >
@@ -948,31 +1048,50 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
 
         {/* Project Configuration Matrix - Below Grid */}
         {isConfigurationPanelOpen && selectedProjectData && (
-          <div className="mt-8 bg-white rounded-lg border border-gray-200 p-6 relative">
-            <button
-              onClick={() => setIsConfigurationPanelOpen(false)}
-              className="absolute top-4 right-4 p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-              title="Close configuration"
-            >
-              <X className="w-5 h-5" />
-            </button>
-            <div className="flex items-center justify-between mb-6 pr-10">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900">Project Configuration</h2>
-                <p className="text-gray-600 mt-1">{selectedProjectData.missionProjectFullName}</p>
+          <div id="project-configuration-panel" className="mt-8 bg-white rounded-lg border border-gray-200 overflow-hidden relative shadow-lg">
+            {/* Sticky Header */}
+            <div className="sticky top-0 z-20 bg-gradient-to-r from-slate-50 to-slate-100 border-b border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">Project Configuration</h2>
+                  <p className="text-sm text-gray-600 mt-1">{selectedProjectData.missionProjectFullName}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setIsConfigurationPanelOpen(false);
+                    setConfigSearchTerm('');
+                  }}
+                  className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
+                  title="Close configuration"
+                >
+                  <X className="w-5 h-5" />
+                </button>
               </div>
-              <button
-                onClick={() => {
-                  handleAddNewPhase();
-                }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium flex items-center gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                Add Phase
-              </button>
+
+              {/* Search and Add Phase */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <input
+                    type="text"
+                    placeholder="Search phases, milestones, activities..."
+                    value={configSearchTerm}
+                    onChange={(e) => setConfigSearchTerm(e.target.value)}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                  />
+                </div>
+                <button
+                  onClick={() => {
+                    handleAddNewPhase();
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium flex items-center gap-2 whitespace-nowrap"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Phase
+                </button>
+              </div>
             </div>
 
-            {/* Phase Selection Modal */}
+            {/* Phase Selection Modal - Now uses Dropdown */}
             {isPhaseSelectionOpen && (
               <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                 <div className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4">
@@ -992,26 +1111,43 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
                         <p className="text-gray-600">Loading phases...</p>
                       </div>
                     ) : (
-                      <div className="space-y-2">
-                        {phaseOptions.map(phase => {
-                          const isPhaseSelected = phases.some(p => p.name === phase.projectPhaseFullName);
-                          return (
-                            <button
-                              key={phase.projectPhaseCode}
-                              onClick={() => !isPhaseSelected && handlePhaseSelected(phase.projectPhaseCode)}
-                              disabled={isPhaseSelected}
-                              className={`w-full text-left px-4 py-3 border rounded-lg transition-colors font-medium ${
-                                isPhaseSelected 
-                                  ? 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed' 
-                                  : 'bg-gray-50 hover:bg-blue-50 border-gray-200 text-gray-900 hover:border-blue-300'
-                              }`}
-                              title={isPhaseSelected ? 'This phase is already added to the project' : ''}
-                            >
-                              {phase.projectPhaseFullName}
-                              {isPhaseSelected && <span className="ml-2 text-xs text-gray-500">(Already Added)</span>}
-                            </button>
-                          );
-                        })}
+                      <div className="space-y-4">
+                        <CoreUISearchableSelect
+                          label="Select a Phase"
+                          placeholder="Search and select a phase..."
+                          options={phaseOptions
+                            .filter(p => !phases.some(phase => phase.name === p.projectPhaseFullName))
+                            .map(phase => ({
+                              value: phase.projectPhaseCode,
+                              label: phase.projectPhaseFullName
+                            }))}
+                          value={null}
+                          onChange={(value) => {
+                            if (value) {
+                              handlePhaseSelected(value as string);
+                            }
+                          }}
+                        />
+                        <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                          <h4 className="text-sm font-semibold text-gray-900 mb-2">Already Added Phases:</h4>
+                          <div className="space-y-2">
+                            {phases.map(p => (
+                              <div key={p.id} className="flex items-center justify-between text-sm">
+                                <span className="text-gray-700">{p.name}</span>
+                                <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">Added</span>
+                              </div>
+                            ))}
+                            {phases.length === 0 && (
+                              <p className="text-sm text-gray-500 italic">No phases added yet</p>
+                            )}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setIsPhaseSelectionOpen(false)}
+                          className="w-full px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg font-semibold transition-colors"
+                        >
+                          Close
+                        </button>
                       </div>
                     )}
                   </div>
@@ -1064,18 +1200,16 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
                       <div className="space-y-4">
                         <div>
                           <label className="block text-sm font-semibold text-gray-700 mb-2">Select Milestone</label>
-                          <select
-                            value={milestoneForm.milestoneCode}
-                            onChange={(e) => setMilestoneForm({ ...milestoneForm, milestoneCode: e.target.value })}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
-                          >
-                            <option value="">Choose a milestone...</option>
-                            {milestoneOptions.map(milestone => (
-                              <option key={milestone.projectMilestoneCode} value={milestone.projectMilestoneCode}>
-                                {milestone.projectMilestoneFullName}
-                              </option>
-                            ))}
-                          </select>
+                          <CoreUISearchableSelect
+                            label=""
+                            placeholder="Search and select a milestone..."
+                            options={milestoneOptions.map(milestone => ({
+                              value: milestone.projectMilestoneCode,
+                              label: milestone.projectMilestoneFullName
+                            }))}
+                            value={milestoneForm.milestoneCode || null}
+                            onChange={(value) => setMilestoneForm({ ...milestoneForm, milestoneCode: (value as string) || '' })}
+                          />
                         </div>
 
                         <div className="grid grid-cols-3 gap-4">
@@ -1145,7 +1279,7 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
             )}
 
             {configError && (
-              <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
+              <div className="p-6 bg-red-50 border border-red-200 rounded-lg flex items-start gap-3">
                 <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
                 <div>
                   <h4 className="font-semibold text-red-900">Error Loading Configuration</h4>
@@ -1155,34 +1289,37 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
             )}
 
             {configLoading ? (
-              <div className="flex items-center justify-center py-12">
+              <div className="flex items-center justify-center py-12 p-6">
                 <div className="text-center">
                   <Loader2 className="w-8 h-8 text-blue-600 animate-spin mx-auto mb-3" />
                   <p className="text-gray-600">Loading configuration data...</p>
                 </div>
               </div>
             ) : (
-              <ProjectMatrix
-                phases={phases}
-                onEditPhase={handleUpdatePhase}
-                onDeletePhase={handleDeletePhase}
-                onAddActivity={handleAddActivity}
-                onDeleteActivity={handleDeleteActivity}
-                onUpdateActivitySort={handleUpdateActivitySort}
-                onUpdateMilestoneSort={handleUpdateMilestoneSort}
-                onDeleteMilestone={handleDeleteMilestone}
-                onEditActivity={handleEditActivityOpen}
-                milestoneOptions={milestoneOptions}
-                activityOptions={activityOptions}
-                projectStartDate={selectedProjectData?.dateOffs}
-                projectEndDate={selectedProjectData?.originalSchedule}
-                onAddMilestoneClick={(phaseId) => {
-                  setSelectedPhaseForMilestone(phaseId);
-                  setMilestoneForm({ milestoneCode: '', startDate: '', endDate: '' });
-                  setValidationErrors([]);
-                  setIsMilestoneConfigOpen(true);
-                }}
-              />
+              <div className="overflow-x-auto max-h-[calc(100vh-400px)]">
+                <ProjectMatrix
+                  phases={phases}
+                  onEditPhase={handleUpdatePhase}
+                  onDeletePhase={handleDeletePhase}
+                  onAddActivity={handleAddActivity}
+                  onDeleteActivity={handleDeleteActivity}
+                  onUpdateActivitySort={handleUpdateActivitySort}
+                  onUpdateMilestoneSort={handleUpdateMilestoneSort}
+                  onDeleteMilestone={handleDeleteMilestone}
+                  onEditActivity={handleEditActivityOpen}
+                  milestoneOptions={milestoneOptions}
+                  activityOptions={activityOptions}
+                  projectStartDate={selectedProjectData?.dateOffs}
+                  projectEndDate={selectedProjectData?.originalSchedule}
+                  onAddMilestoneClick={(phaseId) => {
+                    setSelectedPhaseForMilestone(phaseId);
+                    setMilestoneForm({ milestoneCode: '', startDate: '', endDate: '' });
+                    setValidationErrors([]);
+                    setIsMilestoneConfigOpen(true);
+                  }}
+                  searchTerm={configSearchTerm}
+                />
+              </div>
             )}
           </div>
         )}
@@ -1263,18 +1400,16 @@ export const MyProjectsPage: React.FC<MyProjectsPageProps> = ({ userName, select
                 <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2">
                   Activity Title
                 </label>
-                <select
-                  value={editActivityForm.title}
-                  onChange={(e) => setEditActivityForm(prev => ({ ...prev, title: e.target.value }))}
-                  className="w-full bg-white border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-xl px-4 py-2.5 text-sm transition-all outline-none font-medium text-slate-700"
-                >
-                  <option value="">Select Activity...</option>
-                  {activityOptions.map(a => (
-                    <option key={a.projectActivityCode} value={a.projectActivityFullName}>
-                      {a.projectActivityFullName}
-                    </option>
-                  ))}
-                </select>
+                <CoreUISearchableSelect
+                  label=""
+                  placeholder="Search and select an activity..."
+                  options={activityOptions.map(a => ({
+                    value: a.projectActivityFullName,
+                    label: a.projectActivityFullName
+                  }))}
+                  value={editActivityForm.title || null}
+                  onChange={(value) => setEditActivityForm(prev => ({ ...prev, title: (value as string) || '' }))}
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">

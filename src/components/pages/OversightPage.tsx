@@ -82,7 +82,7 @@ export const OversightPage: React.FC<OversightPageProps> = ({ userName }) => {
                   </span>
                 </td>
                 <td className="px-6 py-4">
-                  <p className="font-bold text-gray-900">₹{(project.sanctionedAmount / 100000).toFixed(1)}L</p>
+                  <p className="font-bold text-gray-900">₹{(project.sanctionedAmount / 10000000).toFixed(1)}Cr</p>
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-2">

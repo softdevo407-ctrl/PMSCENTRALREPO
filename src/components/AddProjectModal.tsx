@@ -37,7 +37,12 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClos
     programmeDirectorId: null as string | number | null,
     projectDirectorId: null as string | number | null,
     projectDocument: null as File | null,
-    description: ''
+    description: '',
+    // Time Overrun Fields
+    timeOverrunApproval: '',
+    revisedCompletionDate: '',
+    regTime: new Date().toISOString(),
+    userId: user?.id || ''
   });
 
   const [showTooltip, setShowTooltip] = useState<string | null>(null);
@@ -48,6 +53,7 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClos
   const [isEditMode, setIsEditMode] = useState(false);
   const [projectDirectors, setProjectDirectors] = useState<{ id: string | number; fullName: string }[]>([]);
   const [programmeDirectors, setProgrammeDirectors] = useState<{ id: string | number; fullName: string }[]>([]);
+  const [isProjectDelayed, setIsProjectDelayed] = useState(false);
 
   // Static Programme Directors with numeric IDs
   const staticProgrammeDirectors = [
@@ -142,6 +148,12 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClos
       // Find the programme to get its ID
       const selectedProgramme = programmes.find(p => p.programmeName === project.programmeName);
       
+      // Check if project is delayed
+      const projectDate = new Date(project.endDate);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const isDelayed = projectDate < today;
+      
       setFormData({
         projectName: project.projectName,
         shortName: project.shortName,
@@ -156,9 +168,15 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClos
         programmeDirectorId: project.programmeDirId || null,
         projectDirectorId: project.projectDirectorId || null,
         projectDocument: null,
-        description: ''
+        description: '',
+        // Time Overrun Fields
+        timeOverrunApproval: project.timeOverrunApproval || '',
+        revisedCompletionDate: project.revisedCompletionDate ? new Date(project.revisedCompletionDate).toISOString().split('T')[0] : '',
+        regTime: project.regTime || new Date().toISOString(),
+        userId: project.userId || user?.id || ''
       });
       
+      setIsProjectDelayed(isDelayed);
       setIsEditMode(true);
       setErrors({});
     } catch (err) {
@@ -183,11 +201,16 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClos
       programmeDirectorId: null,
       projectDirectorId: null,
       projectDocument: null,
-      description: ''
+      description: '',
+      timeOverrunApproval: '',
+      revisedCompletionDate: '',
+      regTime: new Date().toISOString(),
+      userId: user?.id || ''
     });
     setErrors({});
     setSuccess(false);
     setSuccessMessage('');
+    setIsProjectDelayed(false);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -201,6 +224,30 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClos
         programmeName: value,
         programmeId: selectedProgramme?.id || null
       });
+    } else if (name === 'projectRealizationDate') {
+      // Check if date is in the past (project is delayed)
+      const selectedDate = new Date(value);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const isDelayed = selectedDate < today;
+      
+      setFormData({
+        ...formData,
+        [name]: value,
+        regTime: new Date().toISOString(),
+        userId: user?.id || ''
+      });
+      
+      setIsProjectDelayed(isDelayed);
+      
+      // Clear timeOverrunApproval fields if project is no longer delayed
+      if (!isDelayed) {
+        setFormData(prev => ({
+          ...prev,
+          timeOverrunApproval: '',
+          revisedCompletionDate: ''
+        }));
+      }
     } else {
       setFormData({
         ...formData,
@@ -305,9 +352,38 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClos
       sixMonthsFromNow.setMonth(sixMonthsFromNow.getMonth() + 6);
 
       if (!isEditMode && selectedDate <= today) {
-        newErrors.projectRealizationDate = 'Date must be in the future';
+        // If project is delayed and in edit mode, we need timeOverrunApproval details
+        if (isEditMode && isProjectDelayed) {
+          if (!formData.timeOverrunApproval) {
+            newErrors.timeOverrunApproval = 'Time Overrun Approval is required for delayed projects';
+          }
+          if (!formData.revisedCompletionDate) {
+            newErrors.revisedCompletionDate = 'Revised Completion Date is required for delayed projects';
+          } else {
+            const revisedDate = new Date(formData.revisedCompletionDate);
+            if (revisedDate <= selectedDate) {
+              newErrors.revisedCompletionDate = 'Revised date must be after the original date';
+            }
+          }
+        }
       } else if (!isEditMode && selectedDate < sixMonthsFromNow) {
         newErrors.projectRealizationDate = 'Date should be at least 6 months from today';
+      }
+    }
+
+    // Time Overrun validations for delayed projects
+    if (isProjectDelayed && isEditMode) {
+      if (!formData.timeOverrunApproval) {
+        newErrors.timeOverrunApproval = 'Time Overrun Approval is required for delayed projects';
+      }
+      if (!formData.revisedCompletionDate) {
+        newErrors.revisedCompletionDate = 'Revised Completion Date is required for delayed projects';
+      } else {
+        const revisedDate = new Date(formData.revisedCompletionDate);
+        const originalDate = new Date(formData.projectRealizationDate);
+        if (revisedDate <= originalDate) {
+          newErrors.revisedCompletionDate = 'Revised date must be after the original date';
+        }
       }
     }
 
@@ -386,6 +462,13 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClos
           endDate: formData.projectRealizationDate,
           programmeDirectorId: formData.programmeDirectorId,
           projectDirectorId: formData.projectDirectorId,
+          // Time Overrun Fields
+          ...(isProjectDelayed && {
+            timeOverrunApproval: formData.timeOverrunApproval,
+            revisedCompletionDate: formData.revisedCompletionDate,
+            regTime: formData.regTime,
+            userId: formData.userId
+          })
         };
         response = await projectService.updateProject(projectId, projectDataForUpdate, formData.projectDocument || undefined);
         setSuccessMessage(`Project "${response.projectName}" updated successfully!`);
@@ -713,6 +796,76 @@ export const AddProjectModal: React.FC<AddProjectModalProps> = ({ isOpen, onClos
                 )}
               </div>
             </div>
+
+            {/* Time Overrun Alert and Details - Shown when project is delayed */}
+            {isProjectDelayed && isEditMode && (
+              <div className="bg-red-50 border border-red-300 rounded-lg p-4 mt-4">
+                <div className="flex items-start gap-3 mb-4">
+                  <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="font-semibold text-red-800">⚠️ Project Delayed</h4>
+                    <p className="text-sm text-red-700 mt-1">
+                      The original completion date has passed. Please provide time overrun approval details below.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Time Overrun Approval *
+                    </label>
+                    <select
+                      name="timeOverrunApproval"
+                      value={formData.timeOverrunApproval}
+                      onChange={handleChange}
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none transition ${
+                        errors.timeOverrunApproval ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                      disabled={loading}
+                    >
+                      <option value="">-- Select Approval Status --</option>
+                      <option value="YES">Yes - Approved</option>
+                      <option value="NO">No - Not Approved</option>
+                    </select>
+                    {errors.timeOverrunApproval && (
+                      <p className="text-red-600 text-sm mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-4 h-4" />
+                        {errors.timeOverrunApproval}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Revised Completion Date *
+                    </label>
+                    <input
+                      type="date"
+                      name="revisedCompletionDate"
+                      value={formData.revisedCompletionDate}
+                      onChange={handleChange}
+                      min={formData.projectRealizationDate}
+                      className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent outline-none transition ${
+                        errors.revisedCompletionDate ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                      disabled={loading}
+                    />
+                    {errors.revisedCompletionDate && (
+                      <p className="text-red-600 text-sm mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-4 h-4" />
+                        {errors.revisedCompletionDate}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-3 text-xs text-gray-600 bg-white p-2 rounded border border-gray-200">
+                  <p><strong>Registration Time:</strong> {new Date(formData.regTime).toLocaleString('en-IN')}</p>
+                  <p><strong>Captured By (User ID):</strong> {formData.userId || 'Current User'}</p>
+                </div>
+              </div>
+            )}
 
             {/* File Upload */}
             <div>

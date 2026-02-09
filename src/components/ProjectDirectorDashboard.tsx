@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Plus,
   FileText,
@@ -9,12 +9,31 @@ import {
   CheckCircle,
   Calendar,
   Loader2,
+  Download,
+  Printer,
+  PieChart as PieChartIcon,
+  BarChart3,
+  TrendingUpIcon,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { projectDetailService, ProjectDetailResponse, ProjectDetailRequest } from '../services/projectDetailService';
 import { SAMPLE_PROJECT_SCHEDULING, SAMPLE_REVISION_REQUESTS } from '../pbemData';
 import CoreUIForm from './CoreUIForm';
-import { CategoryStatsCards } from './CategoryStatsCards';
+import {
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip as ReTooltip,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  LineChart,
+  Line,
+  Legend,
+} from 'recharts';
 
 interface ProjectDirectorDashboardProps {
   userName: string;
@@ -31,6 +50,9 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  
+  // Refs for chart containers
+  const chartsContainerRef = useRef<HTMLDivElement>(null);
 
   // Fetch projects on mount and when user changes
   useEffect(() => {
@@ -43,9 +65,17 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
     try {
       setLoading(true);
       setError(null);
-      // Get projects where user is either director or programme director
-      const projects = await projectDetailService.getMyProjects();
-      setMyProjects(projects || []);
+      // Try to get projects by director using employee code
+      if (user?.employeeCode) {
+        console.log('Fetching projects for director:', user.employeeCode);
+        const projects = await projectDetailService.getProjectDetailsByDirector(user.employeeCode);
+        console.log('Projects fetched:', projects);
+        setMyProjects(projects || []);
+      } else {
+        console.log('No employee code found, falling back to getMyProjects');
+        const projects = await projectDetailService.getMyProjects();
+        setMyProjects(projects || []);
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch projects';
       setError(errorMessage);
@@ -60,15 +90,39 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
   const mySchedulings = SAMPLE_PROJECT_SCHEDULING;
   const myRevisions = SAMPLE_REVISION_REQUESTS.filter((r) => r.requestedBy === userName);
 
-  const stats = {
-    total: myProjects.length,
-    onTrack: myProjects.filter((p) => p.missionProjectCode?.toLowerCase().includes('ontrack')).length,
-    atRisk: myProjects.filter((p) => p.missionProjectCode?.toLowerCase().includes('atrisk')).length,
-    delayed: myProjects.filter((p) => p.missionProjectCode?.toLowerCase().includes('delayed')).length,
-    pendingRevisions: myRevisions.filter((r) => r.status === 'PENDING').length,
+  // Determine if project is delayed using schedule date
+  const isProjectDelayed = (project: ProjectDetailResponse) => {
+    try {
+      // If timeOverrunApproval = 'YES' and revisedCompletionDate exists, use that instead
+      const scheduleToCheck = project.timeOverrunApproval === 'YES' && project.revisedCompletionDate 
+        ? project.revisedCompletionDate 
+        : project.originalSchedule;
+      
+      if (scheduleToCheck) {
+        const sched = new Date(scheduleToCheck);
+        if (!isNaN(sched.getTime())) {
+          const now = new Date();
+          return sched.getTime() < now.getTime();
+        }
+      }
+    } catch (e) {
+      // ignore parse errors and fall back
+    }
+
+    // fallback: if durationInMonths > 0 treat as delayed (legacy behavior)
+    return (project.durationInMonths || 0) > 0;
   };
 
-  // Enhanced utilities
+  const stats = {
+    total: myProjects.length,
+    onTrack: myProjects.filter((p) => !isProjectDelayed(p)).length,
+    atRisk: 0,
+    delayed: myProjects.filter((p) => isProjectDelayed(p)).length,
+    pendingRevisions: myRevisions.filter((r) => r.status === 'PENDING').length,
+    sanctionedCost: myProjects.reduce((sum, p) => sum + (p.sanctionedCost || 0), 0)
+  };
+
+  // Enhanced utilities - Define before using in data calculations
   const computeProgress = (project: ProjectDetailResponse) => {
     const done = project.cumExpUpToPrevFy || 0;
     const total = project.sanctionedCost || 1;
@@ -82,6 +136,25 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
     const pts = [base - 10, base - 4, base - 2, base, base + 6, base + 12].map(v => Math.max(0, Math.min(100, v)));
     return pts;
   };
+
+  const COLORS = ['#10B981', '#F59E0B', '#EF4444', '#7C3AED'];
+
+  const pieData = [
+    { name: 'On Track', value: stats.onTrack },
+    { name: 'Delayed', value: stats.delayed }
+  ];
+
+  const topBudgetProjects = [...myProjects]
+    .sort((a, b) => (b.sanctionedCost || 0) - (a.sanctionedCost || 0))
+    .slice(0, 6)
+    .map((p) => ({ 
+      name: p.missionProjectFullName || p.missionProjectCode || 'Untitled', 
+      sanctionedCost: p.sanctionedCost || 0,
+      cumExpUpToPrevFy: (p.cumulativeExpenditureToDate || p.cumExpUpToPrevFy || 0),
+      curYrExp: p.curYrExp || 0,
+    }));
+
+  const progressLineData = myProjects.map((p, idx) => ({ name: p.missionProjectShortName || `P${idx + 1}`, progress: computeProgress(p) }));
 
   const handleExportCSV = () => {
     const rows = filteredProjects.map(p => ({
@@ -105,6 +178,121 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
   const handleSort = (key: string) => {
     if (sortBy === key) setSortDir(prev => prev === 'asc' ? 'desc' : 'asc');
     else { setSortBy(key); setSortDir('asc'); }
+  };
+
+  const handlePrintDashboard = () => {
+    const printWindow = window.open('', '', 'height=600,width=800');
+    if (printWindow) {
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>Project Director Dashboard - ${new Date().toLocaleDateString()}</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              h1 { color: #1a1a1a; text-align: center; }
+              .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin: 20px 0; }
+              .stat-card { border: 1px solid #ddd; padding: 15px; border-radius: 8px; }
+              .stat-value { font-size: 24px; font-weight: bold; margin: 10px 0; }
+              .stat-label { color: #666; font-size: 12px; }
+              table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+              th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+              th { background-color: #f0f0f0; font-weight: bold; }
+              .footer { text-align: center; margin-top: 30px; font-size: 12px; color: #999; }
+            </style>
+          </head>
+          <body>
+            <h1>Project Director Dashboard</h1>
+            <p style="text-align: center; color: #666;">Generated on ${new Date().toLocaleString()}</p>
+            
+            <div class="stats-grid">
+              <div class="stat-card">
+                <div class="stat-label">Total Projects</div>
+                <div class="stat-value">${stats.total}</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">On Track</div>
+                <div class="stat-value" style="color: #10B981;">${stats.onTrack}</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Delayed</div>
+                <div class="stat-value" style="color: #EF4444;">${stats.delayed}</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">Total Budget</div>
+                <div class="stat-value" style="color: #7C3AED;">₹${(stats.sanctionedCost || 0).toLocaleString()}</div>
+              </div>
+            </div>
+
+            <h2>Projects Summary</h2>
+            <table>
+              <thead>
+                <tr>
+                  <th>Project Name</th>
+                  <th>Status</th>
+                  <th>Budget (₹)</th>
+                  <th>Progress</th>
+                  <th>End Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${filteredProjects.map((p) => `
+                  <tr>
+                    <td>${p.missionProjectFullName} (${p.missionProjectShortName})</td>
+                    <td>${p.regStatus === 'R' ? 'Active' : 'Inactive'}</td>
+                    <td>${p.sanctionedCost}Cr</td>
+                    <td>${computeProgress(p)}%</td>
+                    <td>${new Date(p.originalSchedule).toLocaleDateString('en-IN')}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+            
+            <div class="footer">
+              <p>This is a confidential document. © Project Management System ${new Date().getFullYear()}</p>
+            </div>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+      setTimeout(() => {
+        printWindow.print();
+      }, 250);
+    }
+  };
+
+  const handleExportChartsPNG = async () => {
+    if (!chartsContainerRef.current) return;
+    try {
+      // Simple approach: use SVG export or trigger browser print
+      const chartHTML = chartsContainerRef.current.innerHTML;
+      const printWindow = window.open('', '', 'height=600,width=1200');
+      if (printWindow) {
+        printWindow.document.write(`
+          <html>
+            <head>
+              <title>Project Director Charts - ${new Date().toLocaleDateString()}</title>
+              <style>
+                body { margin: 20px; font-family: Arial, sans-serif; }
+                .charts-container { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+                svg { max-width: 100%; height: auto; }
+              </style>
+            </head>
+            <body>
+              <h1>Project Director Dashboard - Charts & Analytics</h1>
+              <p>Generated on ${new Date().toLocaleString()}</p>
+              <div class="charts-container">${chartHTML}</div>
+            </body>
+          </html>
+        `);
+        printWindow.document.close();
+        setTimeout(() => {
+          printWindow.print();
+        }, 500);
+      }
+    } catch (err) {
+      console.error('Error exporting charts:', err);
+      alert('Could not export charts. Try using your browser\'s print functionality.');
+    }
   };
 
   // Derived list after search, filter and sort
@@ -206,11 +394,8 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
      
       </div>
 
-      {/* Category-wise Stats Cards - Only renders if categories exist with data */}
-      <CategoryStatsCards onNavigate={onNavigate} employeeCode={user?.employeeCode} />
-
       {/* Statistics Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-all">
           <div className="flex items-center justify-between">
             <div>
@@ -231,15 +416,7 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-all">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-orange-600 font-semibold uppercase">At Risk</p>
-              <p className="text-4xl font-bold text-orange-900 mt-2">{stats.atRisk}</p>
-            </div>
-            <AlertCircle className="w-12 h-12 text-orange-400" />
-          </div>
-        </div>
+       
 
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-all">
           <div className="flex items-center justify-between">
@@ -254,10 +431,181 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-all">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-purple-600 font-semibold uppercase">Pending Revisions</p>
-              <p className="text-4xl font-bold text-purple-900 mt-2">{stats.pendingRevisions}</p>
+              <p className="text-sm text-purple-600 font-semibold uppercase">Total Budget</p>
+              <p className="text-4xl font-bold text-purple-900 mt-2">₹{(stats.sanctionedCost || 0).toLocaleString()}</p>
             </div>
             <CheckSquare className="w-12 h-12 text-purple-400" />
+          </div>
+        </div>
+      </div>
+
+      {/* Charts with Export/Print Options */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h3 className="text-xl font-bold text-gray-900">Analytics & Insights</h3>
+            <p className="text-sm text-gray-600 mt-1">Real-time project metrics and performance indicators</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handlePrintDashboard}
+              className="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors"
+              title="Print Dashboard"
+            >
+              <Printer className="w-4 h-4" />
+              Print
+            </button>
+            <button
+              onClick={handleExportChartsPNG}
+              className="flex items-center gap-2 px-3 py-2 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-lg text-sm font-medium transition-colors"
+              title="Export Charts"
+            >
+              <Download className="w-4 h-4" />
+              Export
+            </button>
+          </div>
+        </div>
+
+        <div ref={chartsContainerRef} className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Status Breakdown Chart */}
+          <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-lg border border-slate-200 p-4 hover:shadow-md transition-shadow">
+            <div className="flex items-center gap-2 mb-3">
+              <PieChartIcon className="w-5 h-5 text-slate-600" />
+              <h4 className="text-sm font-semibold text-gray-700">Status Breakdown</h4>
+            </div>
+            <div style={{ width: '100%', height: 200 }}>
+              <ResponsiveContainer>
+                <PieChart>
+                  <Pie 
+                    data={pieData} 
+                    dataKey="value" 
+                    nameKey="name" 
+                    cx="50%" 
+                    cy="50%" 
+                    innerRadius={40} 
+                    outerRadius={75} 
+                    paddingAngle={2}
+                    animationBegin={0}
+                    animationDuration={600}
+                  >
+                    {pieData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <ReTooltip 
+                    formatter={(value) => `${value} projects`}
+                    contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="mt-3 text-xs text-gray-600 flex justify-around">
+              {pieData.map((item, idx) => (
+                <div key={idx} className="flex items-center gap-1">
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[idx] }} />
+                  <span>{item.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Top Budgets & Expenditure Analysis */}
+          <div className="lg:col-span-2 bg-gradient-to-br from-blue-50 via-indigo-50 to-blue-50 rounded-lg border border-blue-200 p-5 hover:shadow-lg transition-all">
+            <div className="flex flex-col gap-3 mb-5">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <BarChart3 className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900">Budget vs Expenditure</h4>
+                  <p className="text-xs text-gray-600">Sanctioned, Cumulative & Current Year Costs</p>
+                </div>
+              </div>
+            </div>
+            <div style={{ width: '100%', height: 280 }}>
+              <ResponsiveContainer>
+                <BarChart data={topBudgetProjects} margin={{ top: 15, right: 30, left: 0, bottom: 40 }}>
+                  <CartesianGrid strokeDasharray="4 4" stroke="#e0e7ff" />
+                  <XAxis 
+                    dataKey="name" 
+                    tick={{ fontSize: 10, fill: '#475569' }}
+                    angle={-45}
+                    textAnchor="end"
+                    height={100}
+                  />
+                  <YAxis 
+                    tick={{ fontSize: 11, fill: '#64748b' }}
+                    label={{ value: 'Amount (₹Cr)', angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: '#64748b' } }}
+                  />
+                  <ReTooltip 
+                    formatter={(value: any) => {
+                      const formatted = (value).toFixed(2);
+                      return `₹${formatted}Cr`;
+                    }}
+                    contentStyle={{ 
+                      borderRadius: '10px', 
+                      border: '2px solid #3b82f6',
+                      backgroundColor: '#f0f9ff',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+                    }}
+                    labelStyle={{ color: '#1e40af', fontWeight: 'bold', fontSize: '12px' }}
+                  />
+                 
+                  <Bar 
+                    dataKey="sanctionedCost" 
+                    fill="#3b82f6" 
+                    name="📊 Sanctioned Budget"
+                    radius={[8, 8, 0, 0]} 
+                    animationDuration={600}
+                  />
+                  <Bar 
+                    dataKey="cumExpUpToPrevFy" 
+                    fill="#10b981" 
+                    name="✓ Cumulative Exp"
+                    radius={[8, 8, 0, 0]} 
+                    animationDuration={600}
+                  />
+                  <Bar 
+                    dataKey="curYrExp" 
+                    fill="#f59e0b" 
+                    name="⚡ Current Year Exp"
+                    radius={[8, 8, 0, 0]} 
+                    animationDuration={600}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+         
+          </div>
+
+          {/* Project Progress Chart */}
+          <div className="bg-gradient-to-br from-slate-50 to-slate-100 rounded-lg border border-slate-200 p-4 hover:shadow-md transition-shadow">
+            <div className="flex items-center gap-2 mb-3">
+              <TrendingUpIcon className="w-5 h-5 text-slate-600" />
+              <h4 className="text-sm font-semibold text-gray-700">Progress Trend</h4>
+            </div>
+            <div style={{ width: '100%', height: 200 }}>
+              <ResponsiveContainer>
+                <LineChart data={progressLineData.slice(0, 8)} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#6b7280' }} />
+                  <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: '#6b7280' }} />
+                  <ReTooltip 
+                    formatter={(value) => `${value}%`}
+                    contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb' }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="progress" 
+                    stroke="#06b6d4" 
+                    strokeWidth={2.5}
+                    dot={{ fill: '#06b6d4', r: 3 }}
+                    activeDot={{ r: 5 }}
+                    animationDuration={600}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
       </div>
@@ -336,7 +684,7 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <p className="font-semibold text-gray-900">₹{(project.sanctionedCost / 1000000).toFixed(1)}M</p>
+                        <p className="font-semibold text-gray-900">₹{project.sanctionedCost}Cr</p>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -370,13 +718,6 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
                           >
                             View
                           </button>
-                          <button
-                            onClick={() => onNavigate('scheduling', project.missionProjectCode, { project })}
-                            className="text-slate-600 hover:text-slate-900 text-sm"
-                          >
-                            Configure
-                          </button>
-                          <button onClick={() => { navigator.clipboard.writeText(project.missionProjectCode || ''); alert('Project code copied'); }} className="text-xs px-2 py-1 bg-gray-100 rounded">Copy</button>
                         </div>
                       </td>
                     </tr>
@@ -386,36 +727,6 @@ const ProjectDirectorDashboard: React.FC<ProjectDirectorDashboardProps> = ({ use
             </table>
           </div>
         )}
-      </div>
-
-      {/* Quick Links */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <button
-          onClick={() => onNavigate('scheduling')}
-          className="p-6 bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-lg hover:border-blue-300 transition-all text-left group"
-        >
-          <ClipboardList className="w-8 h-8 text-blue-600 mb-3 group-hover:scale-110 transition-transform" />
-          <h4 className="font-bold text-gray-900 mb-1">Project Scheduling</h4>
-          <p className="text-sm text-gray-600">Manage phases and milestones</p>
-        </button>
-
-        <button
-          onClick={() => onNavigate('revisions')}
-          className="p-6 bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-lg hover:border-blue-300 transition-all text-left group"
-        >
-          <Calendar className="w-8 h-8 text-purple-600 mb-3 group-hover:scale-110 transition-transform" />
-          <h4 className="font-bold text-gray-900 mb-1">Revision Requests</h4>
-          <p className="text-sm text-gray-600">Request date extensions</p>
-        </button>
-
-        <button
-          onClick={() => onNavigate('my-projects')}
-          className="p-6 bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-lg hover:border-blue-300 transition-all text-left group"
-        >
-          <TrendingUp className="w-8 h-8 text-emerald-600 mb-3 group-hover:scale-110 transition-transform" />
-          <h4 className="font-bold text-gray-900 mb-1">Track Progress</h4>
-          <p className="text-sm text-gray-600">Monitor all your projects</p>
-        </button>
       </div>
 
       {/* New Project Form Modal */}

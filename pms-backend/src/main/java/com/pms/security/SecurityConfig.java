@@ -55,10 +55,12 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList("http://localhost:5173", "http://localhost:3000"));
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        configuration.setAllowedOrigins(Arrays.asList("http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173", "http://127.0.0.1:3000"));
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
+        configuration.setExposedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Total-Count"));
         configuration.setAllowCredentials(true);
+        configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
@@ -87,6 +89,9 @@ public class SecurityConfig {
                 .addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class)
                 .authorizeHttpRequests(authz -> authz
                         .requestMatchers("/auth/**", "/api/auth/**").permitAll()
+                    .requestMatchers("/budget-centre-project-codes/**").permitAll()
+                        .requestMatchers("/project-details/**").permitAll()
+                        .requestMatchers("/project-actuals/**").permitAll()
                         .requestMatchers("/programme-offices/**").permitAll()
                         .requestMatchers("/programme-types/**").permitAll()
                         .requestMatchers("/project-activities/**").permitAll()
@@ -94,8 +99,10 @@ public class SecurityConfig {
                         .requestMatchers("/project-milestones/**").permitAll()
                         .requestMatchers("/project-phases-generic/**").permitAll()
                         .requestMatchers("/project-status-codes/**").permitAll()
+                        .requestMatchers("/project-types/**").permitAll()
                         .requestMatchers("/sanctioning-authorities/**").permitAll()
                         .requestMatchers("/employee-details/**").permitAll()
+                        .requestMatchers("/budget-centre/**").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated()

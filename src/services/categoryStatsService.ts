@@ -7,6 +7,10 @@ export interface CategoryStats {
   projectCategoryFullName: string;
   projectCategoryShortName: string;
   projectCount: number;
+  onTrackCount: number;
+  delayedCount: number;
+  totalSanctionedCost: number;
+  totalCumulativeExpenditure: number;
 }
 
 export interface CategoryStatsResponse {
@@ -26,21 +30,37 @@ class CategoryStatsService {
 
   async getCategoryStats(): Promise<CategoryStats[]> {
     try {
-      const response = await fetch(`${API_BASE_URL}/project-details/category-stats`, {
+      const url = `${API_BASE_URL}/project-details/category-stats`;
+      console.log('🔍 Fetching global category stats from URL:', url);
+      
+      const response = await fetch(url, {
         method: 'GET',
         headers: this.getHeaders(),
       });
 
       if (!response.ok) {
-        console.warn(`HTTP ${response.status}: Failed to fetch category stats, returning empty array`);
+        console.warn(`❌ HTTP ${response.status}: Failed to fetch global category stats`);
         return [];
       }
 
       const data = await response.json();
-      return data.categories || [];
+      console.log('✅ Raw response from backend (global):', data);
+      
+      // Handle both direct array response and wrapped response
+      let categories: CategoryStats[] = [];
+      if (Array.isArray(data)) {
+        categories = data;
+      } else if (data.categories && Array.isArray(data.categories)) {
+        categories = data.categories;
+      } else {
+        console.warn('⚠️ Unexpected response format. Expected array or {categories: array}');
+        return [];
+      }
+      
+      console.log('✅ Processed global categories:', categories);
+      return categories;
     } catch (error) {
-      console.error('Error fetching category stats:', error);
-      // Return empty array instead of throwing - allows UI to handle gracefully
+      console.error('❌ Error fetching global category stats:', error);
       return [];
     }
   }
@@ -48,24 +68,36 @@ class CategoryStatsService {
   async getCategoryStatsByDirector(employeeCode: string): Promise<CategoryStats[]> {
     try {
       const url = `${API_BASE_URL}/project-details/category-stats-by-director/${employeeCode}`;
-      console.log('Fetching from URL:', url);
+      console.log('🔍 Fetching director category stats from URL:', url);
+      
       const response = await fetch(url, {
         method: 'GET',
         headers: this.getHeaders(),
       });
 
       if (!response.ok) {
-        console.warn(`HTTP ${response.status}: Failed to fetch category stats for director`);
+        console.warn(`❌ HTTP ${response.status}: Failed to fetch category stats for director ${employeeCode}`);
         return [];
       }
 
       const data = await response.json();
-      console.log('Raw response from backend:', data);
-      const result = data.categories || [];
-      console.log('Processed categories:', result);
-      return result;
+      console.log('✅ Raw response from backend for director:', data);
+      
+      // Handle both direct array response and wrapped response
+      let categories: CategoryStats[] = [];
+      if (Array.isArray(data)) {
+        categories = data;
+      } else if (data.categories && Array.isArray(data.categories)) {
+        categories = data.categories;
+      } else {
+        console.warn('⚠️ Unexpected response format. Expected array or {categories: array}');
+        return [];
+      }
+      
+      console.log('✅ Processed director categories:', categories);
+      return categories;
     } catch (error) {
-      console.error('Error fetching category stats for director:', error);
+      console.error('❌ Error fetching category stats for director:', error);
       return [];
     }
   }

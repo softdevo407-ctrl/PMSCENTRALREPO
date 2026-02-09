@@ -35,9 +35,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 || servletPath.contains("programme-types") || servletPath.contains("project-activities") 
                 || servletPath.contains("project-categories") || servletPath.contains("project-milestones") 
                 || servletPath.contains("project-phases-generic") || servletPath.contains("project-status-codes")
+                || servletPath.contains("project-types")
+                || servletPath.contains("project-details")
+                || servletPath.contains("project-actuals")
                 || servletPath.contains("sanctioning-authorities")
+                || servletPath.contains("budget-centre")
                 || servletPath.contains("employee-details"))) {
-            log.debug("Skipping JWT validation for auth/generics/lookup endpoints");
+            log.debug("Skipping JWT validation for public endpoints");
             filterChain.doFilter(request, response);
             return;
         }

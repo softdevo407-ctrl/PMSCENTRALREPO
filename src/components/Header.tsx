@@ -18,25 +18,25 @@ export const Header: React.FC<HeaderProps> = ({ scrolled, onLoginClick, onSignUp
           <span className="font-display font-bold text-2xl tracking-tight text-slate-900">PMS</span>
         </div>
         
-        <nav className="hidden md:flex items-center gap-8">
+        {/* <nav className="hidden md:flex items-center gap-8">
           <a href="#" className="text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors">Features</a>
           <a href="#" className="text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors">Documentation</a>
           <a href="#" className="text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors">Support</a>
-        </nav>
+        </nav> */}
 
         <div className="flex items-center gap-4">
-          <button 
+          {/* <button 
             onClick={onLoginClick}
             className="text-sm font-semibold text-slate-700 hover:text-indigo-600 transition-colors"
           >
             Log in
-          </button>
-          <button 
+          </button> */}
+          {/* <button 
             onClick={onSignUpClick}
             className="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-all shadow-md hover:shadow-lg"
           >
             Sign up
-          </button>
+          </button> */}
         </div>
       </div>
     </header>

@@ -165,6 +165,20 @@ public class ProjectDefinitionService {
         
         DateTimeFormatter formatter = DateTimeFormatter.ISO_DATE;
         project.setEndDate(LocalDate.parse(request.getEndDate(), formatter));
+        
+        // Update Time Overrun Fields
+        if (request.getTimeOverrunApproval() != null && !request.getTimeOverrunApproval().isEmpty()) {
+            project.setTimeOverrunApproval(request.getTimeOverrunApproval());
+        }
+        if (request.getRevisedCompletionDate() != null && !request.getRevisedCompletionDate().isEmpty()) {
+            project.setRevisedCompletionDate(LocalDate.parse(request.getRevisedCompletionDate(), formatter));
+        }
+        if (request.getRegTime() != null && !request.getRegTime().isEmpty()) {
+            project.setRegTime(LocalDateTime.parse(request.getRegTime()));
+        }
+        if (request.getUserId() != null && !request.getUserId().isEmpty()) {
+            project.setUserId(request.getUserId());
+        }
 
         ProjectDefinition updatedProject = projectDefinitionRepository.save(project);
         log.info("Project updated successfully: {}", updatedProject.getShortName());
@@ -237,6 +251,11 @@ public class ProjectDefinitionService {
                 .status(project.getStatus().toString())
                 .createdDate(project.getCreatedDate())
                 .updatedDate(project.getUpdatedDate())
+                // Time Overrun Fields
+                .timeOverrunApproval(project.getTimeOverrunApproval())
+                .revisedCompletionDate(project.getRevisedCompletionDate())
+                .userId(project.getUserId())
+                .regTime(project.getRegTime())
                 .build();
     }
 }

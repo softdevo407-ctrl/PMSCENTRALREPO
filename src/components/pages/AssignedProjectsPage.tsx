@@ -255,7 +255,7 @@ export const AssignedProjectsPage: React.FC<AssignedProjectsPageProps> = ({ user
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <p className="font-bold text-gray-900">₹{((project.sanctionedCost || 0) / 1000000).toFixed(1)}M</p>
+                          <p className="font-bold text-gray-900">₹{(project.sanctionedCost || 0).toFixed(1)}Cr</p>
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-600 font-medium">
                           {new Date(project.originalSchedule).toLocaleDateString('en-IN')}

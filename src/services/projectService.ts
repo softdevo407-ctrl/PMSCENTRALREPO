@@ -16,6 +16,11 @@ export interface ProjectDefinitionRequest {
   programmeDirectorId?: string | number | null;
   projectDirectorId?: string | number | null;
   projectDocumentPath?: string | null;
+  // Time Overrun Fields
+  timeOverrunApproval?: string;
+  revisedCompletionDate?: string;
+  regTime?: string;
+  userId?: string;
 }
 
 export interface ProjectDefinitionResponse {
@@ -43,6 +48,11 @@ export interface ProjectDefinitionResponse {
   status: string;
   createdDate: string;
   updatedDate?: string;
+  // Time Overrun Fields
+  timeOverrunApproval?: string;
+  revisedCompletionDate?: string;
+  regTime?: string;
+  userId?: string;
 }
 
 class ProjectService {

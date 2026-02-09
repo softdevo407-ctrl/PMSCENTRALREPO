@@ -8,6 +8,7 @@ export default {
       fontFamily: {
         inter: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
         display: ['Lexend', 'system-ui', '-apple-system', 'sans-serif'],
+        arial: ['Arial', 'sans-serif'],
       },
       colors: {
         slate: {

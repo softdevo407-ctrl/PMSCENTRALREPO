@@ -34,10 +34,27 @@ public class ProjectDetailService {
         int currentYear = Year.now().getValue();
         String yearPrefix = currentYear + "P";
         
-        // Find the maximum sequence number for this year
-        int nextSequence = projectDetailRepository.findMaxSequenceByYear(yearPrefix)
-                .map(max -> max + 1)
-                .orElse(1);
+        // Find all project codes for this year
+        List<ProjectDetail> yearProjects = projectDetailRepository.findProjectCodesByYear(yearPrefix);
+        
+        int nextSequence = 1;
+        if (!yearProjects.isEmpty()) {
+            // Extract sequence numbers and find max
+            int maxSequence = yearProjects.stream()
+                    .map(p -> {
+                        String code = p.getMissionProjectCode();
+                        try {
+                            // Code format: YEARP001 - extract the numeric part
+                            String numPart = code.substring(5);
+                            return Integer.parseInt(numPart);
+                        } catch (Exception e) {
+                            return 0;
+                        }
+                    })
+                    .max(Integer::compareTo)
+                    .orElse(0);
+            nextSequence = maxSequence + 1;
+        }
         
         return String.format("%sP%03d", currentYear, nextSequence);
     }
@@ -227,10 +244,43 @@ public class ProjectDetailService {
         }
     }
     
+    // Helper method to check if a project is delayed (same logic as frontend)
+    private boolean isProjectDelayed(ProjectDetail project) {
+        try {
+            // If timeOverrunApproval = 'YES' and revisedCompletionDate exists, use that instead
+            java.time.LocalDate scheduleToCheck = null;
+            
+            if ("YES".equals(project.getTimeOverrunApproval()) && project.getRevisedCompletionDate() != null) {
+                scheduleToCheck = project.getRevisedCompletionDate();
+            } else if (project.getOriginalSchedule() != null) {
+                scheduleToCheck = project.getOriginalSchedule();
+            }
+            
+            if (scheduleToCheck != null) {
+                java.time.LocalDate today = java.time.LocalDate.now();
+                // If schedule date is less than or equal to today, it's delayed
+                // Only future dates (after today) are on-track
+                if (!scheduleToCheck.isAfter(today)) {
+                    return true;  // delayed
+                }
+                return false;  // on-track
+            }
+        } catch (Exception e) {
+            log.warn("Error checking project delay status for project {}: {}", project.getMissionProjectCode(), e.getMessage());
+        }
+        
+        // Fallback: if durationInMonths > 0 treat as delayed (legacy behavior)
+        return (project.getDurationInMonths() != null && project.getDurationInMonths() > 0);
+    }
+
     public Object getCategoryStats() {
+        // Get all categories from database
+        List<ProjectCategory> allCategories = projectCategoryRepository.findAll();
+        
+        // Get all projects and group by category
         List<ProjectDetail> projects = projectDetailRepository.findAllOrderByCodeDesc();
         
-        Map<String, CategoryStatDTO> categoryStats = projects.stream()
+        Map<String, List<ProjectDetail>> groupedByCategory = projects.stream()
                 .collect(Collectors.groupingBy(
                         project -> {
                             // Get programme type for this project
@@ -241,38 +291,59 @@ public class ProjectDetailService {
                                 }
                             }
                             return "UNKNOWN";
-                        },
-                        Collectors.counting()
-                ))
-                .entrySet().stream()
-                .collect(Collectors.toMap(
-                        Map.Entry::getKey,
-                        entry -> {
-                            String categoryCode = entry.getKey();
-                            long count = entry.getValue();
-                            
-                            // Fetch category details
-                            ProjectCategory category = null;
-                            if (!categoryCode.equals("UNKNOWN")) {
-                                category = projectCategoryRepository.findById(categoryCode).orElse(null);
-                            }
-                            
-                            return new CategoryStatDTO(
-                                    categoryCode,
-                                    category != null ? category.getProjectCategoryFullName() : "Unknown",
-                                    category != null ? category.getProjectCategoryShortName() : "UNK",
-                                    (int) count
-                            );
                         }
                 ));
         
-        return Map.of("categories", categoryStats.values());
+        // Create stats for all categories, including those with no projects
+        List<CategoryStatDTO> categoryStats = allCategories.stream()
+                .map(category -> {
+                    String categoryCode = category.getProjectCategoryCode();
+                    List<ProjectDetail> categoryProjects = groupedByCategory.getOrDefault(categoryCode, List.of());
+                    
+                    int totalCount = categoryProjects.size();
+                    
+                    // Calculate On Track vs Delayed using the same logic as frontend
+                    int delayedCount = (int) categoryProjects.stream()
+                            .filter(this::isProjectDelayed)
+                            .count();
+                    int onTrackCount = totalCount - delayedCount;
+                    
+                    log.info("📊 Category Stats: {} - Total={}, OnTrack={}, Delayed={}", 
+                            category.getProjectCategoryFullName(), totalCount, onTrackCount, delayedCount);
+                    
+                    // Calculate total costs
+                    double totalSanctionedCost = categoryProjects.stream()
+                            .mapToDouble(p -> p.getSanctionedCost() != null ? p.getSanctionedCost().doubleValue() : 0.0)
+                            .sum();
+
+                    double totalCumulativeExpenditure = categoryProjects.stream()
+                            .mapToDouble(p -> p.getCumExpUpToPrevFy() != null ? p.getCumExpUpToPrevFy().doubleValue() : 0.0)
+                            .sum();
+                    
+                    return new CategoryStatDTO(
+                            categoryCode,
+                            category.getProjectCategoryFullName(),
+                            category.getProjectCategoryShortName(),
+                            totalCount,
+                            onTrackCount,
+                            delayedCount,
+                            totalSanctionedCost,
+                            totalCumulativeExpenditure
+                    );
+                })
+                .collect(Collectors.toList());
+        
+        return Map.of("categories", categoryStats);
     }
     
     public Object getCategoryStatsByDirector(String employeeCode) {
+        // Get all categories from database
+        List<ProjectCategory> allCategories = projectCategoryRepository.findAll();
+        
+        // Get projects for this director
         List<ProjectDetail> projects = projectDetailRepository.findByMissionProjectDirectorOrProgrammeDirector(employeeCode, employeeCode);
         
-        Map<String, CategoryStatDTO> categoryStats = projects.stream()
+        Map<String, List<ProjectDetail>> groupedByCategory = projects.stream()
                 .collect(Collectors.groupingBy(
                         project -> {
                             // Get programme type for this project
@@ -283,41 +354,83 @@ public class ProjectDetailService {
                                 }
                             }
                             return "UNKNOWN";
-                        },
-                        Collectors.counting()
-                ))
-                .entrySet().stream()
-                .collect(Collectors.toMap(
-                        Map.Entry::getKey,
-                        entry -> {
-                            String categoryCode = entry.getKey();
-                            long count = entry.getValue();
-                            
-                            // Fetch category details
-                            ProjectCategory category = null;
-                            if (!categoryCode.equals("UNKNOWN")) {
-                                category = projectCategoryRepository.findById(categoryCode).orElse(null);
-                            }
-                            
-                            return new CategoryStatDTO(
-                                    categoryCode,
-                                    category != null ? category.getProjectCategoryFullName() : "Unknown",
-                                    category != null ? category.getProjectCategoryShortName() : "UNK",
-                                    (int) count
-                            );
                         }
                 ));
         
-        return Map.of("categories", categoryStats.values());
+        // Create stats for all categories, including those with no projects for this director
+        List<CategoryStatDTO> categoryStats = allCategories.stream()
+                .map(category -> {
+                    String categoryCode = category.getProjectCategoryCode();
+                    List<ProjectDetail> categoryProjects = groupedByCategory.getOrDefault(categoryCode, List.of());
+                    
+                    int totalCount = categoryProjects.size();
+                    
+                    // Calculate On Track vs Delayed using the same logic as frontend
+                    int delayedCount = (int) categoryProjects.stream()
+                            .filter(this::isProjectDelayed)
+                            .count();
+                    int onTrackCount = totalCount - delayedCount;
+                    
+                    log.info("📊 Director Category Stats: {} - Total={}, OnTrack={}, Delayed={}", 
+                            category.getProjectCategoryFullName(), totalCount, onTrackCount, delayedCount);
+                    
+                    // Calculate total costs
+                    double totalSanctionedCost = categoryProjects.stream()
+                            .mapToDouble(p -> p.getSanctionedCost() != null ? p.getSanctionedCost().doubleValue() : 0.0)
+                            .sum();
+
+                    double totalCumulativeExpenditure = categoryProjects.stream()
+                            .mapToDouble(p -> p.getCumExpUpToPrevFy() != null ? p.getCumExpUpToPrevFy().doubleValue() : 0.0)
+                            .sum();
+                    
+                    return new CategoryStatDTO(
+                            categoryCode,
+                            category.getProjectCategoryFullName(),
+                            category.getProjectCategoryShortName(),
+                            totalCount,
+                            onTrackCount,
+                            delayedCount,
+                            totalSanctionedCost,
+                            totalCumulativeExpenditure
+                    );
+                })
+                .collect(Collectors.toList());
+        
+        return Map.of("categories", categoryStats);
     }
     
-    @lombok.Data
-    @lombok.AllArgsConstructor
-    public static class CategoryStatDTO {
-        private String projectCategoryCode;
-        private String projectCategoryFullName;
-        private String projectCategoryShortName;
-        private int projectCount;
+    // Get projects by programmeTypeCode - derives projects from a specific programme type
+    public List<ProjectDetailResponse> getProjectDetailsByProgrammeTypeCode(String programmeTypeCode) {
+        log.info("Fetching project details for programme type: {}", programmeTypeCode);
+        
+        // Verify that the programme type exists and get its category
+        ProgrammeType programmeType = programmeTypeRepository.findById(programmeTypeCode)
+                .orElseThrow(() -> new RuntimeException("Programme Type not found with code: " + programmeTypeCode));
+        
+        log.info("Programme Type found: {} -> Category: {}", programmeTypeCode, programmeType.getProjectCategoryCode());
+        
+        // Fetch all projects for this programme type
+        List<ProjectDetail> projects = projectDetailRepository.findByProgrammeTypeCode(programmeTypeCode);
+        
+        log.info("Found {} projects for programme type: {}", projects.size(), programmeTypeCode);
+        
+        return projects.stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
+    }
+    
+    // Get projects by projectCategoryCode - derives projects from all programme types in that category
+    public List<ProjectDetailResponse> getProjectDetailsByProjectCategoryCode(String projectCategoryCode) {
+        log.info("Fetching project details for project category: {}", projectCategoryCode);
+        
+        // Fetch all projects for this project category (via programme type mapping)
+        List<ProjectDetail> projects = projectDetailRepository.findByProjectCategoryCode(projectCategoryCode);
+        
+        log.info("Found {} projects for project category: {}", projects.size(), projectCategoryCode);
+        
+        return projects.stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
     }
     
     private ProjectDetailResponse convertToResponse(ProjectDetail project) {
@@ -357,6 +470,11 @@ public class ProjectDetailService {
                 .userId(project.getUserId())
                 .regStatus(project.getRegStatus())
                 .regTime(project.getRegTime())
+                .costOverrunApproval(project.getCostOverrunApproval())
+                .revisedSanctionedCost(project.getRevisedSanctionedCost())
+                .timeOverrunApproval(project.getTimeOverrunApproval())
+                .revisedDateOffs(project.getRevisedDateOffs())
+                .revisedCompletionDate(project.getRevisedCompletionDate())
                 .build();
     }
 }

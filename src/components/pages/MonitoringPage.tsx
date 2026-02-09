@@ -72,7 +72,7 @@ export const MonitoringPage: React.FC<MonitoringPageProps> = ({ userName }) => {
                 </div>
                 <div>
                   <p className="text-xs text-gray-600 uppercase tracking-wide">Budget</p>
-                  <p className="font-bold text-gray-900 mt-1">₹{(project.sanctionedAmount / 100000).toFixed(1)}L</p>
+                  <p className="font-bold text-gray-900 mt-1">₹{(project.sanctionedAmount / 10000000).toFixed(1)}Cr</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-600 uppercase tracking-wide">Progress</p>

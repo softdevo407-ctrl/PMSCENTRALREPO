@@ -49,4 +49,13 @@ public class ProjectDefinitionRequest {
     private Long projectDirectorId;
 
     private String projectDocumentPath;
+
+    // Time Overrun Fields
+    private String timeOverrunApproval;
+
+    private String revisedCompletionDate;
+
+    private String userId;
+
+    private String regTime;
 }

@@ -93,19 +93,19 @@ const CoreUISidebar: React.FC<CoreUISidebarProps> = ({
           icon: <FileText className="w-5 h-5" />,
           onClick: () => onNavigate('my-projects'),
         },
-        {
-          id: 'scheduling',
-          label: 'Project Scheduling',
-          icon: <ClipboardList className="w-5 h-5" />,
-          onClick: () => onNavigate('scheduling'),
-        },
-        {
-          id: 'revisions',
-          label: 'Revision Requests',
-          icon: <CheckSquare className="w-5 h-5" />,
-          badge: pendingCount > 0 ? pendingCount.toString() : undefined,
-          onClick: () => onNavigate('revisions'),
-        },
+        // {
+        //   id: 'scheduling',
+        //   label: 'Project Scheduling',
+        //   icon: <ClipboardList className="w-5 h-5" />,
+        //   onClick: () => onNavigate('scheduling'),
+        // },
+        // {
+        //   id: 'revisions',
+        //   label: 'Revision Requests',
+        //   icon: <CheckSquare className="w-5 h-5" />,
+        //   badge: pendingCount > 0 ? pendingCount.toString() : undefined,
+        //   onClick: () => onNavigate('revisions'),
+        // },
       ];
     } else if (userRole === 'Programme Director') {
       return [

@@ -37,4 +37,10 @@ public class ProjectDefinitionResponse {
     private String projectDocumentPath;
     private LocalDateTime createdDate;
     private LocalDateTime updatedDate;
+    
+    // Time Overrun Fields
+    private String timeOverrunApproval;
+    private LocalDate revisedCompletionDate;
+    private String userId;
+    private LocalDateTime regTime;
 }

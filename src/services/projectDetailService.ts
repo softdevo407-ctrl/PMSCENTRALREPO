@@ -33,6 +33,11 @@ export interface ProjectDetailResponse extends ProjectDetailRequest {
   currentStatus?: string;
   currentStatusRemarks?: string;
   projectCategoryCode?: string;
+  costOverrunApproval?: string;
+  revisedSanctionedCost?: number;
+  timeOverrunApproval?: string;
+  revisedDateOffs?: string;
+  revisedCompletionDate?: string;
 }
 
 class ProjectDetailService {
@@ -136,6 +141,44 @@ class ProjectDetailService {
       return await response.json();
     } catch (error) {
       console.error("Error fetching project detail:", error);
+      throw error;
+    }
+  }
+
+  async getProjectDetailsByProgrammeTypeCode(programmeTypeCode: string): Promise<ProjectDetailResponse[]> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/project-details/by-programme-type/${programmeTypeCode}`, {
+        method: "GET",
+        headers: this.getHeaders(),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP ${response.status}: Failed to fetch projects for programme type`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error("Error fetching projects by programme type:", error);
+      throw error;
+    }
+  }
+
+  async getProjectDetailsByProjectCategoryCode(projectCategoryCode: string): Promise<ProjectDetailResponse[]> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/project-details/by-category/${projectCategoryCode}`, {
+        method: "GET",
+        headers: this.getHeaders(),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `HTTP ${response.status}: Failed to fetch projects for category`);
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error("Error fetching projects by category:", error);
       throw error;
     }
   }

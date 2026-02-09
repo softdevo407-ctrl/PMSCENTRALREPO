@@ -39,24 +39,30 @@ const CoreUIDashboardLayout: React.FC<CoreUIDashboardLayoutProps> = ({
   };
 
   const colors = getRoleColor(userRole);
+  
+  // Hide sidebar for Chairman
+  const showSidebar = userRole !== 'Chairman';
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden">
       {/* Sidebar */}
-      <CoreUISidebar
-        isOpen={sidebarOpen}
-        onToggle={() => setSidebarOpen(!sidebarOpen)}
-        userRole={userRole}
-        userName={userName}
-        currentPage={currentPage}
-        onNavigate={onNavigate}
-        pendingCount={pendingCount}
-        onLogout={onLogout}
-      />
+      {showSidebar && (
+        <CoreUISidebar
+          isOpen={sidebarOpen}
+          onToggle={() => setSidebarOpen(!sidebarOpen)}
+          userRole={userRole}
+          userName={userName}
+          currentPage={currentPage}
+          onNavigate={onNavigate}
+          pendingCount={pendingCount}
+          onLogout={onLogout}
+        />
+      )}
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top Navigation */}
+        {/* Top Navigation - Hide for Chairman */}
+        {showSidebar && (
         <header className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-20">
           <div className="px-6 py-4 flex items-center justify-between gap-4">
             {/* Left Side */}
@@ -128,10 +134,11 @@ const CoreUIDashboardLayout: React.FC<CoreUIDashboardLayoutProps> = ({
             </span>
           </div>
         </header>
+        )}
 
         {/* Main Content Area */}
         <main className="flex-1 overflow-auto">
-          <div className="p-6 md:p-8 max-w-7xl mx-auto w-full">
+          <div className={`${showSidebar ? 'p-6 md:p-8 max-w-7xl mx-auto w-full' : 'p-0 w-full h-full'}`}>
             {children}
           </div>
         </main>

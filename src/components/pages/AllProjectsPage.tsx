@@ -1,13 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { AlertCircle, CheckCircle, Clock, BarChart3, Loader2, Search, ArrowUpDown } from 'lucide-react';
 import { projectDetailService, ProjectDetailResponse } from '../../services/projectDetailService';
+import ProjectListModal from '../ProjectListModal';
 
 interface AllProjectsPageProps {
   userName: string;
-  onNavigate?: (page: string, projectCode?: string, additionalData?: any) => void;
+  onNavigate?: (page: string, category?: string, filter?: 'all' | 'on-track' | 'delayed') => void;
+  selectedCategory?: string;
+  selectedFilter?: 'all' | 'on-track' | 'delayed';
 }
 
-export const AllProjectsPage: React.FC<AllProjectsPageProps> = ({ userName, onNavigate = (page: string, projectCode?: string, additionalData?: any) => {} }) => {
+export const AllProjectsPage: React.FC<AllProjectsPageProps> = ({ userName, onNavigate, selectedCategory, selectedFilter = 'all' }) => {
   const [projects, setProjects] = useState<ProjectDetailResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -15,6 +18,9 @@ export const AllProjectsPage: React.FC<AllProjectsPageProps> = ({ userName, onNa
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [modalOpen, setModalOpen] = useState(!!selectedCategory);
+  const [modalTitle, setModalTitle] = useState('');
+  const [modalProjects, setModalProjects] = useState<ProjectDetailResponse[]>([]);
 
   // Fetch all projects for Chairman
   useEffect(() => {
@@ -35,6 +41,46 @@ export const AllProjectsPage: React.FC<AllProjectsPageProps> = ({ userName, onNa
 
     fetchProjects();
   }, []);
+
+  const isProjectDelayed = (project?: ProjectDetailResponse) => {
+    try {
+      if (!project) return false;
+      
+      // If timeOverrunApproval = 'YES' and revisedCompletionDate exists, use that instead
+      const scheduleToCheck = project.timeOverrunApproval === 'YES' && project.revisedCompletionDate 
+        ? project.revisedCompletionDate 
+        : project.originalSchedule;
+      
+      if (scheduleToCheck) {
+        const sched = new Date(scheduleToCheck);
+        if (!isNaN(sched.getTime())) {
+          const now = new Date();
+          return sched.getTime() < now.getTime();
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+    return (project?.durationInMonths || 0) > 0;
+  };
+
+  // Handle category and filter selection from CategoryStatsCards
+  useEffect(() => {
+    if (selectedCategory && projects.length > 0) {
+      const categoryProjects = projects.filter(p => p.projectCategoryCode === selectedCategory);
+      
+      let filtered = categoryProjects;
+      if (selectedFilter === 'on-track') {
+        filtered = categoryProjects.filter(p => !isProjectDelayed(p));
+      } else if (selectedFilter === 'delayed') {
+        filtered = categoryProjects.filter(p => isProjectDelayed(p));
+      }
+      
+      setModalProjects(filtered);
+      setModalTitle(`${selectedCategory} - ${selectedFilter.charAt(0).toUpperCase() + selectedFilter.slice(1)}`);
+      setModalOpen(true);
+    }
+  }, [selectedCategory, selectedFilter, projects]);
 
   // Calculate progress and map status
   const getProjectStatus = (project: ProjectDetailResponse) => {
@@ -270,6 +316,16 @@ export const AllProjectsPage: React.FC<AllProjectsPageProps> = ({ userName, onNa
           )}
         </div>
       )}
+
+      {/* Project List Modal - shown when category is selected from CategoryStatsCards */}
+      <ProjectListModal 
+        isOpen={modalOpen}
+        title={modalTitle}
+        projects={modalProjects}
+        onClose={() => {
+          setModalOpen(false);
+        }}
+      />
     </div>
   );
 };

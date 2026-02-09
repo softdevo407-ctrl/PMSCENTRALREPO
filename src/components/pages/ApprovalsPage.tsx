@@ -69,7 +69,7 @@ export const ApprovalsPage: React.FC<ApprovalsPageProps> = ({ userName, userRole
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-gray-600">Current Budget</p>
-                        <p className="text-lg font-bold text-gray-900">₹{(project?.sanctionedAmount || 0 / 100000).toFixed(1)}L</p>
+                        <p className="text-lg font-bold text-gray-900">₹{((project?.sanctionedAmount || 0) / 10000000).toFixed(1)}Cr</p>
                       </div>
                       <div>
                         <p className="text-gray-600">Revised End Date</p>

@@ -78,6 +78,15 @@ public class ProjectDetailController {
         log.info("Fetching category statistics for director: {}", employeeCode);
         return ResponseEntity.ok(projectDetailService.getCategoryStatsByDirector(employeeCode));
     }
+
+    @GetMapping("/by-category/{categoryCode}")
+    @PermitAll
+    public ResponseEntity<List<ProjectDetailResponse>> getProjectDetailsByProjectCategoryCode(
+            @PathVariable String categoryCode) {
+        log.info("Fetching project details for category: {}", categoryCode);
+        List<ProjectDetailResponse> projects = projectDetailService.getProjectDetailsByProjectCategoryCode(categoryCode);
+        return ResponseEntity.ok(projects);
+    }
     
     @GetMapping("/{code}")
     @PermitAll

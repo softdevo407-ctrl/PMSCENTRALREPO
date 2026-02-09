@@ -91,7 +91,7 @@ const ProgrammeDirectorDashboard: React.FC<ProgrammeDirectorDashboardProps> = ({
       </div>
 
       {/* Category Stats */}
-      <CategoryStatsCards onNavigate={onNavigate} employeeCode={user?.employeeCode} />
+      <CategoryStatsCards onNavigate={onNavigate} employeeCode={user?.employeeCode} userRole={user?.role} />
 
       {/* Portfolio Overview Cards */}
       {!loading && (
@@ -241,21 +241,21 @@ const ProgrammeDirectorDashboard: React.FC<ProgrammeDirectorDashboardProps> = ({
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm font-semibold text-gray-700">Total Budget</p>
-                      <p className="text-lg font-bold text-gray-900">₹{(projects.reduce((sum, p) => sum + (p.sanctionedCost || 0), 0) / 1000000).toFixed(1)}M</p>
+                      <p className="text-lg font-bold text-gray-900">₹{(projects.reduce((sum, p) => sum + (p.sanctionedCost || 0), 0) / 1000000).toFixed(1)}Cr</p>
                     </div>
                     <div className="w-full h-3 bg-gradient-to-r from-blue-400 to-blue-600 rounded-full"></div>
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm font-semibold text-gray-700">Spent</p>
-                      <p className="text-lg font-bold text-green-600">₹{(projects.reduce((sum, p) => sum + (p.cumExpUpToPrevFy || 0), 0) / 1000000).toFixed(1)}M</p>
+                      <p className="text-lg font-bold text-green-600">₹{(projects.reduce((sum, p) => sum + (p.cumExpUpToPrevFy || 0), 0) / 1000000).toFixed(1)}Cr</p>
                     </div>
                     <div className="w-full h-3 bg-gradient-to-r from-green-400 to-green-600 rounded-full"></div>
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <p className="text-sm font-semibold text-gray-700">Remaining</p>
-                      <p className="text-lg font-bold text-amber-600">₹{((projects.reduce((sum, p) => sum + (p.sanctionedCost || 0), 0) - projects.reduce((sum, p) => sum + (p.cumExpUpToPrevFy || 0), 0)) / 1000000).toFixed(1)}M</p>
+                      <p className="text-lg font-bold text-amber-600">₹{((projects.reduce((sum, p) => sum + (p.sanctionedCost || 0), 0) - projects.reduce((sum, p) => sum + (p.cumExpUpToPrevFy || 0), 0)) / 1000000).toFixed(1)}Cr</p>
                     </div>
                     <div className="w-full h-3 bg-gradient-to-r from-amber-400 to-amber-600 rounded-full"></div>
                   </div>

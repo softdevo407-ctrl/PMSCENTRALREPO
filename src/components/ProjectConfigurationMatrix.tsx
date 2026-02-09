@@ -89,6 +89,7 @@ interface ProjectMatrixProps {
   onDeleteMilestone?: (phaseId: string, milestoneId: string) => void;
   projectStartDate?: string;
   projectEndDate?: string;
+  searchTerm?: string;
 }
 
 const ProjectMatrix: React.FC<ProjectMatrixProps> = ({ 
@@ -106,21 +107,51 @@ const ProjectMatrix: React.FC<ProjectMatrixProps> = ({
   onAddMilestoneClick = () => {},
   onDeleteMilestone = () => {},
   projectStartDate = '',
-  projectEndDate = ''
+  projectEndDate = '',
+  searchTerm = ''
 }) => {
+  // Filter phases based on search term
+  const filterPhases = (): ProjectPhase[] => {
+    if (!searchTerm.trim()) return phases;
+    
+    const search = searchTerm.toLowerCase();
+    return phases.filter(phase => {
+      // Check if phase name matches
+      if (phase.name.toLowerCase().includes(search)) return true;
+      
+      // Check if any milestone matches
+      if (phase.milestones.some(milestone => 
+        milestone.title.toLowerCase().includes(search) ||
+        milestone.code.toLowerCase().includes(search)
+      )) return true;
+      
+      // Check if any activity matches
+      if (phase.milestones.some(milestone =>
+        milestone.activities.some(activity =>
+          activity.title.toLowerCase().includes(search) ||
+          activity.id.toLowerCase().includes(search)
+        )
+      )) return true;
+      
+      return false;
+    });
+  };
+
+  const filteredPhases = filterPhases();
+
   return (
     <div className="overflow-hidden">
       <table className="w-full text-left border-collapse">
         <thead>
           <tr className="bg-slate-50/80 border-b border-slate-200">
-            <th className="p-3 w-16 text-[9px] font-black text-slate-400 uppercase tracking-widest">Order</th>
+            {/* <th className="p-3 w-16 text-[9px] font-black text-slate-400 uppercase tracking-widest">Order</th> */}
             <th className="p-3 text-[9px] font-black text-slate-400 uppercase tracking-widest flex-1 min-w-[300px]">Phase / Milestone / Activity Details</th>
             <th className="p-3 text-[9px] font-black text-slate-400 uppercase tracking-widest w-32">Timeline</th>
             <th className="p-3 text-[9px] font-black text-slate-400 uppercase tracking-widest w-24 text-center sticky right-0 bg-slate-50/80 z-10">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {phases.map((phase) => (
+          {filteredPhases.map((phase) => (
             <PhaseGroup 
               key={phase.id} 
               phase={phase} 
@@ -139,6 +170,11 @@ const ProjectMatrix: React.FC<ProjectMatrixProps> = ({
           ))}
         </tbody>
       </table>
+      {filteredPhases.length === 0 && (
+        <div className="text-center py-8 text-gray-500">
+          <p>No phases, milestones, or activities match your search.</p>
+        </div>
+      )}
     </div>
   );
 };
@@ -214,7 +250,8 @@ const PhaseGroup: React.FC<{
     <>
       {/* PHASE HEADER ROW */}
       <tr className="bg-gradient-to-r from-indigo-50 to-blue-50/50 group/phase border-b-2 border-indigo-200">
-        <td className="p-3 align-top">
+        <td className="p-3 align-top hidden">
+          {/* Hidden phase sort order column */}
           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-600 to-blue-600 flex items-center justify-center text-[9px] font-black text-white shadow-lg shadow-indigo-200">
             {phase.sortOrder}
           </div>
@@ -250,7 +287,8 @@ const PhaseGroup: React.FC<{
         <React.Fragment key={milestone.id}>
           {/* MILESTONE ROW - SHOWING ALL DETAILS + ACTIVITIES */}
           <tr className="bg-gradient-to-r from-purple-50 to-purple-25 border-b border-purple-200 group/milestone hover:from-purple-100/50 hover:to-purple-50/50 transition-all">
-            <td className="p-3 pl-8 bg-gradient-to-r from-purple-50/60 to-transparent">
+            <td className="p-3 pl-8 bg-gradient-to-r from-purple-50/60 to-transparent hidden">
+              {/* Hidden milestone sort order column */}
               <div className="flex flex-col items-center gap-1">
                 <Check className="w-3.5 h-3.5 text-purple-600" />
                 <input 
@@ -270,46 +308,43 @@ const PhaseGroup: React.FC<{
                   <CheckCircle2 className="w-4 h-4 text-purple-600 flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-bold text-slate-800">{milestone.title}</p>
-                      <span className="inline-block bg-purple-100 text-purple-700 font-bold px-1.5 py-0.5 rounded text-[8px]">Sort: {milestone.sortOrder}</span>
+                      <p className="text-base font-bold text-slate-800">{milestone.title}</p>
                     </div>
-                    <div className="flex items-center gap-2 text-[9px] text-slate-600 font-mono mt-1">
-                      <Clock className="w-3 h-3 text-purple-600" />
-                      <span>{milestone.months}mo</span>
+                    <div className="flex items-center gap-2 text-sm text-slate-600 font-mono mt-1">
+                      <Clock className="w-4 h-4 text-purple-600" />
+                      <span className="font-semibold">{milestone.months} months</span>
                     </div>
                   </div>
                 </div>
 
                 {/* ACTIVITIES INTEGRATED BELOW MILESTONE */}
                 {milestone.activities && milestone.activities.length > 0 && (
-                  <div className="mt-2 pt-2 border-t border-purple-200/40 space-y-1">
+                  <div className="mt-3 pt-3 border-t border-purple-200/40 space-y-2">
                     {[...milestone.activities].sort((a, b) => a.sortOrder - b.sortOrder).map((activity, actIdx) => (
-                      <div key={activity.id} className="pl-2 border-l border-emerald-400 py-1 bg-emerald-50/40 px-1.5 rounded flex items-start justify-between gap-1 group/act">
-                        <div className="flex items-start gap-1.5 flex-1 min-w-0">
-                          <ActivityIcon className="w-2.5 h-2.5 text-emerald-600 flex-shrink-0 mt-1" />
+                      <div key={activity.id} className="pl-3 border-l-2 border-emerald-400 py-2 bg-emerald-50/60 px-3 rounded flex items-start justify-between gap-2 group/act">
+                        <div className="flex items-start gap-2 flex-1 min-w-0">
+                          <ActivityIcon className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
                           <div className="flex-1 min-w-0">
-                            <p className="text-[9px] font-semibold text-slate-700 truncate">{activity.title}</p>
-                            <div className="flex items-center gap-1 text-[7px] text-slate-500 mt-0.5">
-                              <span className="inline-block bg-yellow-100 text-yellow-700 font-bold px-1 py-0 rounded">#{activity.sortOrder}</span>
-                              <span className="text-slate-400">•</span>
-                              <span className="font-mono text-slate-500">{formatDate(activity.startDate)} → {formatDate(activity.endDate)}</span>
+                            <p className="text-sm font-semibold text-slate-800 truncate">{activity.title}</p>
+                            <div className="flex items-center gap-2 text-xs text-slate-600 mt-1">
+                              <span className="font-mono text-slate-600">{formatDate(activity.startDate)} → {formatDate(activity.endDate)}</span>
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-0.5 opacity-0 group-hover/act:opacity-100 transition-opacity flex-shrink-0">
+                        <div className="flex items-center gap-1 flex-shrink-0">
                           <button 
                             onClick={() => onEditActivity(phase.id, milestone.id, activity)}
                             title="Edit activity"
-                            className="p-1 rounded bg-blue-100 text-blue-600 hover:bg-blue-200 hover:text-blue-700 transition-all text-[9px]"
+                            className="p-1.5 rounded bg-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white transition-all"
                           >
-                            <Edit2 className="w-2.5 h-2.5" />
+                            <Edit2 className="w-4 h-4" />
                           </button>
                           <button 
                             onClick={() => onDeleteActivity(phase.id, milestone.id, activity.id)}
                             title="Delete activity"
-                            className="p-1 rounded bg-red-100 text-red-600 hover:bg-red-200 hover:text-red-700 transition-all text-[9px]"
+                            className="p-1.5 rounded bg-red-100 text-red-600 hover:bg-red-600 hover:text-white transition-all"
                           >
-                            <Trash2 className="w-2.5 h-2.5" />
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </div>
@@ -331,9 +366,9 @@ const PhaseGroup: React.FC<{
                         [milestone.id]: { title: '', startDate: '', endDate: '', sortOrder: (milestone.activities?.length || 0) + 1 }
                       }));
                     }}
-                    className="mt-1 flex items-center gap-1 text-emerald-700 hover:text-emerald-800 font-semibold text-[8px] transition-all duration-150 px-1.5 py-1 rounded border border-dashed border-emerald-300 hover:bg-emerald-50/60 hover:border-emerald-400 w-full justify-center"
+                    className="mt-2 flex items-center justify-center gap-2 text-emerald-700 hover:text-white bg-emerald-50 hover:bg-emerald-600 font-semibold text-sm transition-all duration-150 px-3 py-2 rounded border border-emerald-300 hover:border-emerald-600 w-full"
                   >
-                    <Plus className="w-2.5 h-2.5" />
+                    <Plus className="w-4 h-4" />
                     Add Activity
                   </button>
                 )}
@@ -341,27 +376,37 @@ const PhaseGroup: React.FC<{
             </td>
             <td className="p-3 bg-gradient-to-r from-purple-50/20 to-transparent">
               <div className="text-center">
-                <div className="text-[8px] font-black text-purple-600 uppercase tracking-widest mb-1">Timeline</div>
-                <div className="text-[9px] font-bold text-slate-800 mb-0.5">{formatDate(milestone.startDate)}</div>
-                <div className="text-[7px] text-slate-500">→</div>
-                <div className="text-[9px] font-bold text-slate-800">{formatDate(milestone.endDate)}</div>
+                <div className="text-xs font-black text-purple-600 uppercase tracking-widest mb-1">Timeline</div>
+                <div className="text-sm font-bold text-slate-800 mb-1">{formatDate(milestone.startDate)}</div>
+                <div className="text-xs text-slate-500">↓</div>
+                <div className="text-sm font-bold text-slate-800">{formatDate(milestone.endDate)}</div>
               </div>
             </td>
             <td className="p-3 sticky right-0 bg-gradient-to-l from-purple-50 to-purple-25 z-10 text-center border-l border-purple-200 group-hover/milestone:from-purple-100/50 group-hover/milestone:to-purple-50/50 transition-all">
-              <button 
-                onClick={() => onDeleteMilestone(phase.id, milestone.id)}
-                className="p-1.5 rounded bg-red-100 text-red-600 hover:bg-red-200 hover:text-red-700 opacity-0 group-hover/milestone:opacity-100 transition-all duration-200 shadow-sm text-xs"
-                title="Delete milestone"
-              >
-                <Trash2 className="w-3 h-3" />
-              </button>
+              <div className="flex items-center justify-center gap-1">
+                <button 
+                  onClick={() => onAddMilestoneClick(phase.id)}
+                  title="Add another milestone"
+                  className="p-1.5 rounded bg-green-100 text-green-600 hover:bg-green-600 hover:text-white transition-all shadow-sm"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+                <button 
+                  onClick={() => onDeleteMilestone(phase.id, milestone.id)}
+                  className="p-1.5 rounded bg-red-100 text-red-600 hover:bg-red-600 hover:text-white transition-all shadow-sm"
+                  title="Delete milestone"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             </td>
           </tr>
 
           {/* ADD ACTIVITY ROW FOR THIS MILESTONE - ONLY IF VISIBLE */}
           {visibleAddRowMilestone.has(milestone.id) && (
             <tr className="bg-gradient-to-r from-emerald-50 to-green-50 border-l-4 border-emerald-500 border-dashed shadow-inner group/addrow">
-              <td className="px-3 py-2 pl-8 bg-gradient-to-r from-emerald-50/60 to-transparent">
+              <td className="px-3 py-2 pl-8 bg-gradient-to-r from-emerald-50/60 to-transparent hidden">
+                {/* Hidden new activity sort order */}
                 <div className="flex items-center gap-1">
                   <Plus className="w-2.5 h-2.5 text-emerald-600" />
                   <span className="text-[7px] font-black text-emerald-700 uppercase tracking-widest">NEW</span>
@@ -388,8 +433,8 @@ const PhaseGroup: React.FC<{
                     </select>
                   </div>
 
-                  <div className="flex items-center gap-1">
-                    <span className="inline-block bg-amber-100 text-amber-700 font-bold px-1 py-0 text-[7px] rounded">Order:</span>
+                  <div className="hidden">
+                    {/* Hidden order field - stored in state but not displayed */}
                     <input 
                       type="number"
                       value={getNewActivityForm(milestone.id).sortOrder}
@@ -397,7 +442,7 @@ const PhaseGroup: React.FC<{
                         ...prev,
                         [milestone.id]: { ...getNewActivityForm(milestone.id), sortOrder: parseInt(e.target.value) || 0 }
                       }))}
-                      className="w-8 bg-gradient-to-r from-amber-100 to-amber-50 border border-amber-400 rounded px-1 py-0.5 text-[7px] font-black text-amber-700 outline-none focus:ring-1 focus:ring-amber-500/50 text-center"
+                      className="hidden"
                       min="1"
                     />
                   </div>

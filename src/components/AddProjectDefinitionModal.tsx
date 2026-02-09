@@ -48,6 +48,31 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
   const [successMessage, setSuccessMessage] = useState('');
   const [isEditMode, setIsEditMode] = useState(false);
   const [sanctionedCostLakhs, setSanctionedCostLakhs] = useState<number>(0);
+  
+  // Time Overrun and Project Actuals states
+  const [timeOverrunApproval, setTimeOverrunApproval] = useState<string>('NO');
+  const [revisedCompletionDate, setRevisedCompletionDate] = useState<string>('');
+  const [projectActuals, setProjectActuals] = useState<Array<{
+    budgetYear: number;
+    plannedCashFlow: number;
+    votedGrant: number;
+    revisedEstimates: number;
+    actualExpenditure: number;
+  }>>([]);
+  const [currentActualRow, setCurrentActualRow] = useState<{
+    budgetYear: number;
+    plannedCashFlow: number;
+    votedGrant: number;
+    revisedEstimates: number;
+    actualExpenditure: number;
+  }>({
+    budgetYear: new Date().getFullYear(),
+    plannedCashFlow: 0,
+    votedGrant: 0,
+    revisedEstimates: 0,
+    actualExpenditure: 0,
+  });
+  
   const [dropdownOptions, setDropdownOptions] = useState({
     categories: [] as Array<{ code: string; name: string; description?: string }>,
     programmeTypes: [] as Array<{ code: string; name: string; description?: string; display?: string }>,
@@ -68,6 +93,37 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
     dateOffs: 'Date when the project was sanctioned',
   };
 
+  // Helper function to check if originalSchedule is in the past (delayed)
+  const isProjectDelayed = (): boolean => {
+    if (!formData.originalSchedule) return false;
+    const scheduleDate = new Date(formData.originalSchedule);
+    const today = new Date();
+    scheduleDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+    return scheduleDate < today;
+  };
+
+  // Helper function to add a new project actuals row
+  const addProjectActualRow = () => {
+    if (currentActualRow.budgetYear && currentActualRow.plannedCashFlow > 0) {
+      setProjectActuals([...projectActuals, currentActualRow]);
+      setCurrentActualRow({
+        budgetYear: new Date().getFullYear(),
+        plannedCashFlow: 0,
+        votedGrant: 0,
+        revisedEstimates: 0,
+        actualExpenditure: 0,
+      });
+    } else {
+      alert('Please enter Budget Year and Planned Cash Flow > 0');
+    }
+  };
+
+  // Helper function to remove a project actuals row
+  const removeProjectActualRow = (index: number) => {
+    setProjectActuals(projectActuals.filter((_, i) => i !== index));
+  };
+
   // Load project details if in edit mode
   useEffect(() => {
     if (projectCode) {
@@ -83,12 +139,51 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
     }
   }, [isOpen]);
 
+  // Monitor originalSchedule for delay detection
+  useEffect(() => {
+    if (formData.originalSchedule) {
+      const isDelayed = isProjectDelayed();
+      if (isDelayed && timeOverrunApproval === 'NO') {
+        // Auto-enable time overrun section if project is delayed
+        setTimeOverrunApproval('YES');
+      } else if (!isDelayed) {
+        // Reset if schedule is no longer in the past
+        setTimeOverrunApproval('NO');
+        setRevisedCompletionDate('');
+        setProjectActuals([]);
+      }
+    }
+  }, [formData.originalSchedule]);
+
   const loadProjectDetails = async (code: string) => {
     try {
       const project = await projectDetailService.getProjectDetailByCode(code);
       console.log("project------------"+JSON.stringify(project));
       //const lakhsValue = project.sanctionedCost ? project.sanctionedCost / 100000 : 0; // Convert from actual amount to Lakhs
       setSanctionedCostLakhs(project.sanctionedCost);
+      
+      // Load time overrun data if exists
+      if (project.timeOverrunApproval) {
+        setTimeOverrunApproval(project.timeOverrunApproval);
+      }
+      
+      if (project.revisedCompletionDate) {
+        setRevisedCompletionDate(project.revisedCompletionDate);
+      }
+      
+      // Load existing project actuals data if exists
+      if (project.projectActuals && Array.isArray(project.projectActuals) && project.projectActuals.length > 0) {
+        setProjectActuals(
+          project.projectActuals.map((actuals: any) => ({
+            budgetYear: actuals.budgetYear,
+            plannedCashFlow: actuals.plannedCashFlow || 0,
+            votedGrant: actuals.votedGrant || 0,
+            revisedEstimates: actuals.revisedEstimates || 0,
+            actualExpenditure: actuals.actualExpenditure || 0,
+          }))
+        );
+      }
+      
       setFormData({
         missionProjectFullName: project.missionProjectFullName || '',
         missionProjectShortName: project.missionProjectShortName || '',
@@ -283,14 +378,48 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
       return;
     }
 
+    // Validate time overrun data if applicable
+    if (isProjectDelayed() && timeOverrunApproval === 'YES') {
+      if (!revisedCompletionDate) {
+        setErrors({ submit: 'Revised Completion Date is required when Time Overrun is approved' });
+        return;
+      }
+      if (projectActuals.length === 0) {
+        setErrors({ submit: 'At least one Project Actuals record is required when Time Overrun is approved' });
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
       // Convert Lakhs to actual amount (1 Lakh = 100,000)
       const submissionData = {
         ...formData,
-        sanctionedCost: sanctionedCostLakhs * 100000 // Convert Lakhs to actual amount
+        sanctionedCost: sanctionedCostLakhs * 100000, // Convert Lakhs to actual amount
+        currentStatus: "STS01",
+        // Add time overrun data if applicable
+        ...(isProjectDelayed() && timeOverrunApproval === 'YES' ? {
+          timeOverrunApproval: 'YES',
+          revisedCompletionDate: revisedCompletionDate,
+          projectActuals: projectActuals.map(row => ({
+            missionProjectCode: isEditMode && projectCode ? projectCode : formData.missionProjectFullName, // Use actual code in edit mode
+            budgetYear: row.budgetYear,
+            plannedCashFlow: row.plannedCashFlow,
+            votedGrant: row.votedGrant,
+            revisedEstimates: row.revisedEstimates,
+            actualExpenditure: row.actualExpenditure,
+            userId: user?.username || 'SYSTEM',
+            regStatus: 'ACTIVE',
+          })),
+        } : {
+          timeOverrunApproval: 'NO',
+          revisedCompletionDate: '',
+          projectActuals: [], // Clear actuals if not delayed or not approved
+        })
       };
+
+      console.log('Submission Data:', JSON.stringify(submissionData, null, 2));
 
       if (isEditMode && projectCode) {
         await projectDetailService.updateProjectDetail(projectCode, submissionData);
@@ -334,6 +463,16 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
       programmeDirector: '',
     });
     setSanctionedCostLakhs(0);
+    setTimeOverrunApproval('NO');
+    setRevisedCompletionDate('');
+    setProjectActuals([]);
+    setCurrentActualRow({
+      budgetYear: new Date().getFullYear(),
+      plannedCashFlow: 0,
+      votedGrant: 0,
+      revisedEstimates: 0,
+      actualExpenditure: 0,
+    });
     setErrors({});
     setSuccess(false);
     setIsEditMode(false);
@@ -682,6 +821,240 @@ export const AddProjectDefinitionModal: React.FC<AddProjectDefinitionModalProps>
                   </div>
                 </div>
               </div>
+
+              {/* Time Overrun Section - Appears only if project is delayed */}
+              {isProjectDelayed() && (
+                <div className="space-y-6 border-t-2 border-yellow-300 pt-6 bg-yellow-50 p-6 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <AlertCircle className="w-6 h-6 text-yellow-600" />
+                    <h3 className="text-lg font-bold text-yellow-800 uppercase tracking-wider">
+                      ⚠️ Project Time Overrun Detected
+                    </h3>
+                  </div>
+                  <p className="text-sm text-yellow-700">
+                    The original schedule date ({formData.originalSchedule}) is in the past. Please update with time overrun details.
+                  </p>
+
+                  {/* Time Overrun Approval */}
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">
+                        Time Overrun Approval <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={timeOverrunApproval}
+                        onChange={(e) => {
+                          setTimeOverrunApproval(e.target.value);
+                          if (e.target.value === 'NO') {
+                            setRevisedCompletionDate('');
+                            setProjectActuals([]);
+                          }
+                        }}
+                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 hover:border-gray-400 transition-all font-medium"
+                      >
+                        <option value="NO">NO - No Overrun</option>
+                        <option value="YES">YES - Has Overrun</option>
+                      </select>
+                    </div>
+
+                    {/* Revised Completion Date - Only if YES */}
+                    {timeOverrunApproval === 'YES' && (
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">
+                          Revised Completion Date <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="date"
+                          value={revisedCompletionDate}
+                          onChange={(e) => setRevisedCompletionDate(e.target.value)}
+                          min={formData.originalSchedule}
+                          className="w-full px-4 py-3 border-2 border-yellow-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 hover:border-yellow-400 transition-all"
+                        />
+                        <p className="text-xs text-gray-500 mt-2">Must be after original schedule date</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Project Actuals Section - Appears only if timeOverrunApproval = YES */}
+              {timeOverrunApproval === 'YES' && isProjectDelayed() && (
+                <div className="space-y-6 border-t-2 border-blue-300 pt-6 bg-blue-50 p-6 rounded-lg">
+                  <h3 className="text-lg font-bold text-blue-900 uppercase tracking-wider flex items-center gap-2">
+                    <div className="w-1 h-6 bg-blue-600 rounded"></div>
+                    Project Actuals - Financial Data Entry
+                  </h3>
+                  <p className="text-sm text-blue-700">
+                    Enter project financial actuals data for each budget year (Amounts in Lakhs)
+                  </p>
+
+                  {/* Data Entry Form */}
+                  <div className="bg-white p-6 rounded-lg border-2 border-blue-200 space-y-4">
+                    <div className="grid grid-cols-3 gap-4">
+                      {/* Budget Year */}
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          Budget Year <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          min="2000"
+                          max="2100"
+                          value={currentActualRow.budgetYear}
+                          onChange={(e) =>
+                            setCurrentActualRow({
+                              ...currentActualRow,
+                              budgetYear: parseInt(e.target.value) || new Date().getFullYear(),
+                            })
+                          }
+                          className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                        />
+                      </div>
+
+                      {/* Planned Cash Flow */}
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          Planned Cash Flow <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={currentActualRow.plannedCashFlow}
+                          onChange={(e) =>
+                            setCurrentActualRow({
+                              ...currentActualRow,
+                              plannedCashFlow: parseFloat(e.target.value) || 0,
+                            })
+                          }
+                          className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                        />
+                      </div>
+
+                      {/* Voted Grant */}
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          Voted Grant <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={currentActualRow.votedGrant}
+                          onChange={(e) =>
+                            setCurrentActualRow({
+                              ...currentActualRow,
+                              votedGrant: parseFloat(e.target.value) || 0,
+                            })
+                          }
+                          className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-4">
+                      {/* Revised Estimates */}
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          Revised Estimates <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={currentActualRow.revisedEstimates}
+                          onChange={(e) =>
+                            setCurrentActualRow({
+                              ...currentActualRow,
+                              revisedEstimates: parseFloat(e.target.value) || 0,
+                            })
+                          }
+                          className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                        />
+                      </div>
+
+                      {/* Actual Expenditure */}
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">
+                          Actual Expenditure <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={currentActualRow.actualExpenditure}
+                          onChange={(e) =>
+                            setCurrentActualRow({
+                              ...currentActualRow,
+                              actualExpenditure: parseFloat(e.target.value) || 0,
+                            })
+                          }
+                          className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                        />
+                      </div>
+
+                      {/* Add Button */}
+                      <div className="flex items-end">
+                        <button
+                          type="button"
+                          onClick={addProjectActualRow}
+                          className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all font-semibold text-sm"
+                        >
+                          + Add Row
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Project Actuals Table */}
+                  {projectActuals.length > 0 && (
+                    <div className="overflow-x-auto border-2 border-blue-200 rounded-lg">
+                      <table className="w-full text-sm">
+                        <thead className="bg-blue-600 text-white">
+                          <tr>
+                            <th className="px-4 py-3 text-left font-semibold">Budget Year</th>
+                            <th className="px-4 py-3 text-right font-semibold">Planned Cash Flow (₹)</th>
+                            <th className="px-4 py-3 text-right font-semibold">Voted Grant (₹)</th>
+                            <th className="px-4 py-3 text-right font-semibold">Revised Estimates (₹)</th>
+                            <th className="px-4 py-3 text-right font-semibold">Actual Expenditure (₹)</th>
+                            <th className="px-4 py-3 text-center font-semibold">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {projectActuals.map((row, index) => (
+                            <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
+                              <td className="px-4 py-3 border-t border-blue-200 font-medium">{row.budgetYear}</td>
+                              <td className="px-4 py-3 border-t border-blue-200 text-right">
+                                {row.plannedCashFlow.toFixed(2)}
+                              </td>
+                              <td className="px-4 py-3 border-t border-blue-200 text-right">
+                                {row.votedGrant.toFixed(2)}
+                              </td>
+                              <td className="px-4 py-3 border-t border-blue-200 text-right">
+                                {row.revisedEstimates.toFixed(2)}
+                              </td>
+                              <td className="px-4 py-3 border-t border-blue-200 text-right">
+                                {row.actualExpenditure.toFixed(2)}
+                              </td>
+                              <td className="px-4 py-3 border-t border-blue-200 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => removeProjectActualRow(index)}
+                                  className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition-all text-xs font-semibold"
+                                >
+                                  Remove
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {projectActuals.length === 0 && (
+                    <div className="p-4 bg-gray-100 rounded-lg text-center text-gray-600 text-sm">
+                      No project actuals added yet. Fill the form above and click "Add Row" to add financial data.
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Project Team */}
               <div className="space-y-6 border-t-2 border-gray-200 pt-6">

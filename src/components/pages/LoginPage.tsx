@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Mail, Lock, ArrowRight, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -19,15 +19,58 @@ export const LoginPage: React.FC<LoginPageProps> = ({
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [localError, setLocalError] = useState('');
-  const { login, isLoading, error: authError } = useAuth();
+  const { login, loginWithCAS, isLoading, error: authError } = useAuth();
 
-  // Demo users for quick testing
-  const demoUsers = [
-    { employeeCode: 'EMP001', password: 'password123', name: 'Admin User', role: 'Admin' },
-    { employeeCode: 'EMP002', password: 'password123', name: 'Project Director User', role: 'Project Director' },
-    { employeeCode: 'EMP003', password: 'password123', name: 'Programme Director User', role: 'Programme Director' },
-    { employeeCode: 'EMP004', password: 'password123', name: 'Chairman User', role: 'Chairman' },
-  ];
+  // CAS Response Handler
+  useEffect(() => {
+    const processCASResponse = async () => {
+      const url = new URL(window.location.href);
+      
+      if (url.search.trim().length > 0) {
+        try {
+          const cauthResponse = url.searchParams.get('cauthresponse');
+          
+          if (cauthResponse) {
+            // Decode the base64 response
+            const _ujson = JSON.parse(atob(cauthResponse));
+            
+            if (_ujson.login_status === 'success') {
+              const _loginUserID = _ujson['emp_staffcode']; // Username like IS03651
+              console.log('CAS Login successful for user:', _loginUserID);
+              
+              // Call login with the CAS-provided user ID
+              const result = await loginWithCAS(_loginUserID);
+              
+              if (result) {
+                console.log('User logged in successfully via CAS');
+                onLoginSuccess(_loginUserID);
+              } else {
+                setLocalError('CAS login failed. Please try again.');
+              }
+            } else {
+              setLocalError('Invalid CAS Login. ' + (_ujson.msg || ''));
+            }
+            
+            // Clean up the URL by removing the cauthresponse parameter
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+        } catch (error) {
+          console.error('Error processing CAS response:', error);
+          setLocalError('Error processing authentication response. Please try again.');
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      }
+    };
+    
+    processCASResponse();
+  }, [loginWithCAS, onLoginSuccess]);
+
+  // Generate CAS Login URL
+  const generateCASLoginURL = () => {
+    const redirectURL = `${window.location.origin}${window.location.pathname}`;
+    const casLoginURL = `https://central-authentication.isro.dos.gov.in/CASClient/userauthentication.html?redirectURL=${encodeURIComponent(redirectURL)}`;
+    return casLoginURL;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,16 +90,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
     }
   };
 
-  const handleDemoUserClick = async (demoUser: typeof demoUsers[0]) => {
-    setEmployeeCode(demoUser.employeeCode);
-    setLocalError('');
-    const success = await login(demoUser.employeeCode, demoUser.password);
-    if (success) {
-      onLoginSuccess(demoUser.name);
-    } else {
-      setLocalError(authError || 'Login failed');
-    }
-  };
+ 
 
   const displayError = authError || localError;
 
@@ -154,42 +188,63 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 </>
               ) : (
                 <>
-                  Sign In
+                  Log In
                   <ArrowRight className="w-5 h-5" />
                 </>
               )}
             </button>
+
+            {/* CAS Login Divider */}
+            <div className="flex items-center gap-3 my-6">
+              <div className="flex-1 h-px bg-white/20"></div>
+              <span className="text-sm text-indigo-200 font-semibold">Or</span>
+              <div className="flex-1 h-px bg-white/20"></div>
+            </div>
+
+            {/* CAS Login Button */}
+            <a
+              href={generateCASLoginURL()}
+              className={`w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-semibold rounded-lg transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/50 block text-center no-underline ${
+                isLoading ? 'opacity-75 cursor-not-allowed pointer-events-none' : ''
+              }`}
+            >
+              <span>🔐</span>
+              Login via CAS
+            </a>
           </form>
 
-          {/* Divider */}
-          <div className="relative my-8">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-white/10" />
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white/5 text-indigo-200">Demo Credentials</span>
+          {/* CAS Links Section */}
+          <div className="mt-6 pt-6 border-t border-white/10">
+            <div className="space-y-2 text-xs text-center">
+              <div>
+                <a
+                  href="https://central-authentication.isro.dos.gov.in/CASClient/forgotpass.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-indigo-300 hover:text-indigo-100 font-semibold transition-colors"
+                >
+                  Forgot Password?
+                </a>
+              </div>
+              <div>
+                <span className="text-indigo-300">Don't have CAS account?</span>{' '}
+                <a
+                  href="https://central-authentication.isro.dos.gov.in/CASClient/signup.html"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-indigo-300 hover:text-indigo-100 font-semibold transition-colors"
+                >
+                  Sign Up Here
+                </a>
+              </div>
             </div>
           </div>
 
-          {/* Demo Users */}
-          <div className="space-y-2 mb-6">
-            {demoUsers.map((user, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => handleDemoUserClick(user)}
-                disabled={isLoading}
-                className="w-full p-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-all text-left group disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <p className="text-sm font-semibold text-white group-hover:text-indigo-300">{user.name}</p>
-                <p className="text-xs text-indigo-200">{user.role}</p>
-              </button>
-            ))}
-          </div>
 
+      
           {/* Sign Up Link */}
-          <div className="text-center">
-            <p className="text-indigo-200">
+          {/* <div className="text-center">
+            <p className="text-indigo-200" style={{paddingTop: '25px'}}>
               New to PMS?{' '}
               <button
                 type="button"
@@ -199,7 +254,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({
                 Create account
               </button>
             </p>
-          </div>
+          </div> */}
         </div>
 
         {/* Back to Home */}

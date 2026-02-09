@@ -28,6 +28,15 @@ public interface ProjectDetailRepository extends JpaRepository<ProjectDetail, St
     
     Optional<ProjectDetail> findByMissionProjectShortName(String shortName);
     
-    @Query("SELECT MAX(CAST(SUBSTRING(p.missionProjectCode, 6) AS integer)) FROM ProjectDetail p WHERE p.missionProjectCode LIKE ?1%")
-    Optional<Integer> findMaxSequenceByYear(String yearPrefix);
+    @Query("SELECT p FROM ProjectDetail p WHERE p.missionProjectCode LIKE ?1% ORDER BY p.missionProjectCode DESC")
+    List<ProjectDetail> findProjectCodesByYear(String yearPrefix);
+    
+    @Query("SELECT p FROM ProjectDetail p WHERE p.programmeTypeCode = ?1 ORDER BY p.missionProjectCode DESC")
+    List<ProjectDetail> findByProgrammeTypeCode(String programmeTypeCode);
+    
+    @Query(value = "SELECT DISTINCT pd.* FROM pmsmaintables.projectdetails pd " +
+           "INNER JOIN pmsgeneric.programmetypes pt ON pd.programmetypescode = pt.programmetypescode " +
+           "WHERE pt.projectcategorycode = ?1 ORDER BY pd.missionprojectcode DESC", 
+           nativeQuery = true)
+    List<ProjectDetail> findByProjectCategoryCode(String projectCategoryCode);
 }

@@ -1,0 +1,97 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: pms-postgres
+    environment:
+      POSTGRES_DB: bms
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backup.dump:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - pms-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Spring Boot Backend
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+      args:
+        # Encoding '*' as '%2A' to prevent URL parsing issues
+        - http_proxy=http://psnath:Sso%2A2025@10.14.1.1:8080
+        - https_proxy=http://psnath:Sso%2A2025@10.14.1.1:8080
+        - no_proxy=localhost,127.0.0.1,postgres
+    container_name: pms-backend
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/bms
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      JWT_SECRET: your-secret-key-change-this-in-production-with-a-long-random-string-atleast-256-bits
+      JWT_EXPIRATION: 86400000
+      CORS_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:5173,http://frontend:3000
+      JAVA_OPTS: -Xmx512m -Xms256m
+    ports:
+      - "7080:7080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./pms-backend/uploads:/app/uploads
+      - backend_logs:/app/logs
+    networks:
+      - pms-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # React Frontend
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        - http_proxy=http://psnath:Sso%2A2025@10.14.1.1:8080
+        - https_proxy=http://psnath:Sso%2A2025@10.14.1.1:8080
+        - no_proxy=localhost,127.0.0.1,backend
+    container_name: pms-frontend
+    environment:
+      REACT_APP_API_URL: http://localhost:7080/api
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - pms-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  postgres_data:
+    driver: local
+  backend_logs:
+    driver: local
+
+networks:
+  pms-network:
+    driver: bridge

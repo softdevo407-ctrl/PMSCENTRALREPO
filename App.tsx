@@ -1,8 +1,9 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Project, ProjectCategory, ProjectStatus } from './src/types';
 import { UserRole } from './src/pbemTypes';
 import { useAuth } from './src/hooks/useAuth';
+import { AuthProvider } from './src/contexts/AuthContext';
 import { authService } from './src/services/authService';
 import Dashboard from './src/components/Dashboard';
 import ProjectDetail from './src/components/ProjectDetail';
@@ -52,7 +53,7 @@ import {
 const API_BASE_URL = 'http://localhost:7080/api/projects';
 
 type View = 'DASHBOARD' | 'CATEGORY_DETAIL' | 'PROJECT_DETAIL' | 'PMS';
-type AppMode = 'BUDGET' | 'PMS' | 'START' | 'LEGACY_PMS';
+type AppMode = 'BUDGET' | 'PMS' | 'START' | 'LEGACY_PMS' | 'EXECUTIVE';
 
 const App: React.FC = () => {
   const { user, logout } = useAuth();
@@ -60,6 +61,8 @@ const App: React.FC = () => {
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState('dashboard');
+  const [showBackWarning, setShowBackWarning] = useState(false);
+  const historyStackRef = useRef<string[]>(['START']);
 
   // Budget Dashboard State
   const [projects, setProjects] = useState<Project[]>([]);
@@ -73,6 +76,15 @@ const App: React.FC = () => {
 
   // Initialize auth state from localStorage on app mount
   useEffect(() => {
+    // Check if accessing /executive route for unauthenticated Executive Dashboard
+    const pathname = window.location.pathname;
+    if (pathname === '/executive' || pathname === '/Executive') {
+      setAppMode('EXECUTIVE');
+      setCurrentUserName('Executive');
+      setIsInitialized(true);
+      return;
+    }
+
     const savedUser = authService.getCurrentUser();
     if (savedUser && savedUser.role) {
       // Map backend role names to frontend role names
@@ -89,6 +101,26 @@ const App: React.FC = () => {
       setAppMode('PMS');
     }
     setIsInitialized(true);
+  }, []);
+
+  // Prevent browser back button from exiting the app
+  useEffect(() => {
+    // Push initial state to history
+    window.history.pushState(null, '', window.location.href);
+
+    const handlePopState = () => {
+      // Prevent default back behavior by pushing state again
+      window.history.pushState(null, '', window.location.href);
+      // Show warning to user
+      setShowBackWarning(true);
+      setTimeout(() => setShowBackWarning(false), 4000);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
   }, []);
 
   // Sync user from authentication context when logged in
@@ -210,6 +242,36 @@ const App: React.FC = () => {
     );
   }
 
+  // EXECUTIVE MODE - Unauthenticated Executive Dashboard
+  if (appMode === 'EXECUTIVE') {
+    return (
+      <div className="relative">
+        {/* Back Button Warning Toast */}
+        {showBackWarning && (
+          <div className="fixed top-4 right-4 bg-amber-50 border-l-4 border-amber-500 rounded-lg shadow-lg p-4 flex items-center gap-3 z-50 animate-in fade-in slide-in-from-top-4 duration-300">
+            <div className="flex-shrink-0">
+              <svg className="w-5 h-5 text-amber-600" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-xs text-amber-700 mt-0.5">Browser back button is disabled to keep you in the application</p>
+            </div>
+          </div>
+        )}
+        
+        {/* Executive Dashboard without authentication */}
+        <ChairmanDashboard 
+          userName="Executive"
+          onNavigate={setCurrentPage}
+          onLogout={() => {
+            setAppMode('START');
+          }}
+        />
+      </div>
+    );
+  }
+
   // PMS Mode with CoreUI
   if (appMode === 'PMS') {
     // Show start page or role selector
@@ -238,21 +300,37 @@ const App: React.FC = () => {
 
     // Show CoreUI Dashboard based on role
     return (
-      <CoreUIDashboardLayout
-        userRole={userRole}
-        userName={currentUserName}
-        currentPage={currentPage}
-        onNavigate={setCurrentPage}
-        onLogout={() => {
-          logout();
-          setUserRole(null);
-          setCurrentUserName(null);
-          setAppMode('START');
-        }}
-      >
-        {/* ADMIN PAGES */}
-        {currentPage === 'dashboard' && userRole === 'Admin' && (
-          <ChairmanDashboard 
+      <div className="relative">
+        {/* Back Button Warning Toast */}
+        {showBackWarning && (
+          <div className="fixed top-4 right-4 bg-amber-50 border-l-4 border-amber-500 rounded-lg shadow-lg p-4 flex items-center gap-3 z-50 animate-in fade-in slide-in-from-top-4 duration-300">
+            <div className="flex-shrink-0">
+              <svg className="w-5 h-5 text-amber-600" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div>
+              {/* <p className="text-sm font-medium text-amber-900">Use sidebar to navigate</p> */}
+              <p className="text-xs text-amber-700 mt-0.5">Browser back button is disabled to keep you in the application</p>
+            </div>
+          </div>
+        )}
+        
+        <CoreUIDashboardLayout
+          userRole={userRole}
+          userName={currentUserName}
+          currentPage={currentPage}
+          onNavigate={setCurrentPage}
+          onLogout={() => {
+            logout();
+            setUserRole(null);
+            setCurrentUserName(null);
+            setAppMode('START');
+          }}
+        >
+          {/* ADMIN PAGES */}
+          {currentPage === 'dashboard' && userRole === 'Admin' && (
+            <ChairmanDashboard 
             userName={currentUserName}
             onNavigate={setCurrentPage} 
           />
@@ -341,7 +419,13 @@ const App: React.FC = () => {
         {currentPage === 'dashboard' && userRole === 'Chairman' && (
           <ChairmanDashboard 
             userName={currentUserName}
-            onNavigate={setCurrentPage} 
+            onNavigate={setCurrentPage}
+            onLogout={() => {
+              logout();
+              setUserRole(null);
+              setCurrentUserName(null);
+              setAppMode('START');
+            }}
           />
         )}
         {currentPage === 'all-projects' && userRole === 'Chairman' && (
@@ -357,6 +441,7 @@ const App: React.FC = () => {
           <AnalyticsPage userName={currentUserName} />
         )}
       </CoreUIDashboardLayout>
+      </div>
     );
   }
 
@@ -495,4 +580,11 @@ const App: React.FC = () => {
   );
 };
 
-export default App;
+// Wrap App with necessary providers
+const AppWithProviders: React.FC = () => (
+  <AuthProvider>
+    <App />
+  </AuthProvider>
+);
+
+export default AppWithProviders;

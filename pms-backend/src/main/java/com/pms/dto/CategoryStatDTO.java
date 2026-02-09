@@ -12,4 +12,8 @@ public class CategoryStatDTO {
     private String projectCategoryFullName;
     private String projectCategoryShortName;
     private int projectCount;
+    private int onTrackCount;
+    private int delayedCount;
+    private double totalSanctionedCost;
+    private double totalCumulativeExpenditure;
 }

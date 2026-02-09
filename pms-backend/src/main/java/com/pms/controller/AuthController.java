@@ -2,6 +2,7 @@ package com.pms.controller;
 
 import com.pms.dto.ApiResponse;
 import com.pms.dto.AuthResponse;
+import com.pms.dto.CASLoginRequest;
 import com.pms.dto.LoginRequest;
 import com.pms.dto.SignupRequest;
 import com.pms.service.AuthService;
@@ -33,6 +34,15 @@ public class AuthController {
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         log.info("Login request for employee code: {}", request.getEmployeeCode());
         AuthResponse response = authService.login(request);
+        return response.getSuccess()
+                ? ResponseEntity.ok(response)
+                : ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+    }
+
+    @PostMapping("/login-cas")
+    public ResponseEntity<AuthResponse> loginWithCAS(@Valid @RequestBody CASLoginRequest request) {
+        log.info("CAS Login request for employee code: {}", request.getEmployeeCode());
+        AuthResponse response = authService.loginWithCAS(request.getEmployeeCode());
         return response.getSuccess()
                 ? ResponseEntity.ok(response)
                 : ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
